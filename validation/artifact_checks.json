@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "html": [
+    {
+      "file": "GUIDE.html",
+      "links_valid": true
+    },
+    {
+      "file": "runs/G0001_default/index.html",
+      "links_valid": true
+    }
+  ],
+  "python_parse": true,
+  "parent_guide_json": true
+}

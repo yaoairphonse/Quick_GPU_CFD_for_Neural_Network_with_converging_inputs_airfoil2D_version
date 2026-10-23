@@ -1,0 +1,13 @@
+{
+  "physics": {
+    "turbulence": "none",
+    "viscosity": "sutherland"
+  },
+  "solver": {
+    "backend": "cpu",
+    "flux": "ausm",
+    "mode": "time",
+    "stop_time_star": 0.01,
+    "CFL": 0.1
+  }
+}

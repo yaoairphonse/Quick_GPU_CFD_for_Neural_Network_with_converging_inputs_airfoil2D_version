@@ -1,0 +1,46 @@
+{
+  "freestream": {
+    "Mach": 0.7,
+    "AOA_degrees": 3.0,
+    "p_Pa": 30000.0,
+    "T_K": 250.0,
+    "chord_m": 0.8
+  },
+  "physics": {
+    "turbulence": "none",
+    "viscosity": "constant",
+    "constant_mu_Pa_s": 1.7e-05
+  },
+  "boundaries": {
+    "xmax": "pressure-outlet",
+    "outlet_pressure_Pa": 30000.0
+  },
+  "solver": {
+    "mode": "time",
+    "stop_time_star": 0.01
+  },
+  "output": {
+    "fields": [
+      "x",
+      "y",
+      "p",
+      "rho",
+      "u",
+      "v",
+      "mach",
+      "temperature"
+    ],
+    "region_xy_c": [
+      -0.5,
+      2,
+      -0.5,
+      0.5
+    ],
+    "sample_points_xy_c": [
+      [
+        1.2,
+        0
+      ]
+    ]
+  }
+}

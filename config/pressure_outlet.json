@@ -1,0 +1,6 @@
+{
+  "boundaries": {
+    "xmax": "pressure-outlet",
+    "outlet_pressure_Pa": 18754
+  }
+}

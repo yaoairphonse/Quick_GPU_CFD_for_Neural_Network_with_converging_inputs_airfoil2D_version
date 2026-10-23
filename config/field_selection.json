@@ -1,0 +1,34 @@
+{
+  "output": {
+    "fields": [
+      "x",
+      "y",
+      "p",
+      "mach"
+    ],
+    "formats": [
+      "npz"
+    ],
+    "region_xy_c": [
+      -0.5,
+      2,
+      -0.5,
+      0.5
+    ],
+    "sample_points_xy_c": [
+      [
+        1.2,
+        0
+      ],
+      [
+        1.5,
+        0.1
+      ]
+    ],
+    "surface_patches": [
+      1,
+      2,
+      3
+    ]
+  }
+}

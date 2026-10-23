@@ -1,0 +1,290 @@
+// ib2d.cpp -- 立即邊界法（鬼格子加影像點）的建立與壁面力。見 euler2d.h 的 IB2D。
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <vector>
+
+#include "euler2d.h"
+#include "sdf.h"
+
+namespace cfd {
+
+// 在內部格心中找 x 所在區間 [xc[i0], xc[i0+1]]（i0 為內部索引 0..n-2；超出就夾住）。
+static int find_cell(const Array& xc, int ng, int n, double x) {
+  int lo = 0, hi = n - 1;
+  if (x <= xc[ng]) return 0;
+  if (x >= xc[ng + n - 1]) return n - 2;
+  while (hi - lo > 1) {
+    const int mid = (lo + hi) / 2;
+    if (xc[ng + mid] <= x) lo = mid; else hi = mid;
+  }
+  return lo;
+}
+
+// 在 (x,y) 建立流體格內插模板（最多 IB_NS 格），權重和為 1。
+//   模式 0：包圍點的 4 格全是流體 -> 雙線性。
+//   模式 1：否則取周圍 4x4（不夠再 6x6）的流體格，做加權最小平方線性擬合，
+//           權重對「線性場」精確（二階）；用到的格集合只由幾何決定，不依索引順序，
+//           所以對稱的配置得到對稱的權重。
+//   模式 2：流體格太少或共線 -> 反距離平方加權（只保證常數場）。
+// 回傳模式；-1 = 找不到任何流體格。idx 不用的欄位權重為 0。
+static int stencil_at(const Grid2D& g, const double* fluid, double x, double y,
+                      long idx[IB_NS], double w[IB_NS]) {
+  for (int m = 0; m < IB_NS; ++m) { idx[m] = 0; w[m] = 0.0; }
+  const int i0 = find_cell(g.xc, g.ng, g.nx, x), j0 = find_cell(g.yc, g.ng, g.ny, y);
+  {
+    const int ci[4] = {i0, i0 + 1, i0, i0 + 1}, cj[4] = {j0, j0, j0 + 1, j0 + 1};
+    bool all_fluid = true;
+    long id4[4];
+    for (int m = 0; m < 4; ++m) {
+      id4[m] = static_cast<long>(cj[m] + g.ng) * g.mx + (ci[m] + g.ng);
+      if (fluid[id4[m]] == 0.0) all_fluid = false;
+    }
+    if (all_fluid) {
+      double tx = (x - g.xc[g.ng + i0]) / (g.xc[g.ng + i0 + 1] - g.xc[g.ng + i0]);
+      double ty = (y - g.yc[g.ng + j0]) / (g.yc[g.ng + j0 + 1] - g.yc[g.ng + j0]);
+      tx = tx < 0.0 ? 0.0 : (tx > 1.0 ? 1.0 : tx);
+      ty = ty < 0.0 ? 0.0 : (ty > 1.0 ? 1.0 : ty);
+      const double bw[4] = {(1 - tx) * (1 - ty), tx * (1 - ty), (1 - tx) * ty, tx * ty};
+      for (int m = 0; m < 4; ++m) { idx[m] = id4[m]; w[m] = bw[m]; }
+      return 0;
+    }
+  }
+  const double h2 = 0.25 * (g.dx[g.ng + i0] * g.dx[g.ng + i0] + g.dy[g.ng + j0] * g.dy[g.ng + j0]);
+  for (int pass = 0; pass < 2; ++pass) {
+    const int lo = pass == 0 ? -1 : -2, hi = pass == 0 ? 2 : 3;
+    long ids[IB_NS];
+    double X[IB_NS], Y[IB_NS];
+    int cnt = 0;
+    for (int dj = lo; dj <= hi; ++dj)
+      for (int di = lo; di <= hi; ++di) {
+        const int ii = i0 + di, jj = j0 + dj;
+        if (ii < 0 || ii >= g.nx || jj < 0 || jj >= g.ny) continue;
+        const long id = static_cast<long>(jj + g.ng) * g.mx + (ii + g.ng);
+        if (fluid[id] == 0.0) continue;
+        ids[cnt] = id;
+        X[cnt] = g.xc[g.ng + ii] - x;
+        Y[cnt] = g.yc[g.ng + jj] - y;
+        ++cnt;
+      }
+    if (cnt < 3) continue;
+    double M[3][3] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
+    double W[IB_NS];
+    for (int q = 0; q < cnt; ++q) {
+      W[q] = 1.0 / (X[q] * X[q] + Y[q] * Y[q] + h2);
+      const double a[3] = {1.0, X[q], Y[q]};
+      for (int r = 0; r < 3; ++r)
+        for (int c = 0; c < 3; ++c) M[r][c] += W[q] * a[r] * a[c];
+    }
+    const double det = M[0][0] * (M[1][1] * M[2][2] - M[1][2] * M[2][1]) -
+                       M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0]) +
+                       M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0]);
+    const double scale = M[0][0] * M[1][1] * M[2][2];
+    if (!(std::fabs(det) > 1e-9 * scale)) continue;  // 共線，擴大
+    // 解 M z = e1（Cramer 的第一欄餘因子）
+    const double z0 = (M[1][1] * M[2][2] - M[1][2] * M[2][1]) / det;
+    const double z1 = -(M[1][0] * M[2][2] - M[1][2] * M[2][0]) / det;
+    const double z2 = (M[1][0] * M[2][1] - M[1][1] * M[2][0]) / det;
+    for (int q = 0; q < cnt; ++q) {
+      idx[q] = ids[q];
+      w[q] = W[q] * (z0 + z1 * X[q] + z2 * Y[q]);
+    }
+    return 1;
+  }
+  int cnt = 0;
+  double sum = 0.0;
+  for (int dj = -2; dj <= 3; ++dj)
+    for (int di = -2; di <= 3; ++di) {
+      const int ii = i0 + di, jj = j0 + dj;
+      if (ii < 0 || ii >= g.nx || jj < 0 || jj >= g.ny) continue;
+      const long id = static_cast<long>(jj + g.ng) * g.mx + (ii + g.ng);
+      if (fluid[id] == 0.0) continue;
+      const double dx = g.xc[g.ng + ii] - x, dy = g.yc[g.ng + jj] - y;
+      idx[cnt] = id;
+      w[cnt] = 1.0 / (dx * dx + dy * dy + 1e-30);
+      sum += w[cnt];
+      ++cnt;
+    }
+  if (cnt == 0) return -1;
+  for (int m = 0; m < cnt; ++m) w[m] /= sum;
+  return 2;
+}
+
+// 壁面法向（指向流體）：用最近線段的法向，選擇「沿它走一小步會離開多邊形」的方向。
+static void segment_normal_to_fluid(const double* px, const double* py, int n, int seg,
+                                    double cx, double cy, double eps, double* nx, double* ny) {
+  const int a = seg, b = (seg + 1) % n;
+  const double tx = px[b] - px[a], ty = py[b] - py[a];
+  const double L = std::sqrt(tx * tx + ty * ty);
+  double mx = ty / L, my = -tx / L;
+  if (point_in_polygon(px, py, n, cx + eps * mx, cy + eps * my)) {
+    mx = -mx;
+    my = -my;
+  }
+  *nx = mx;
+  *ny = my;
+}
+
+int ib2d_build_polygon(const Solver2D* s, const double* px, const double* py, int n, IB2D* ib) {
+  const Grid2D& g = s->grid;
+  const size_t cells = static_cast<size_t>(g.mx) * g.my;
+  const int nx = g.nx, ny = g.ny;
+
+  // 1) SDF 與分類（只在內部格）
+  std::vector<double> phi(static_cast<size_t>(nx) * ny);
+  std::vector<unsigned char> type(static_cast<size_t>(nx) * ny);
+  for (int j = 0; j < ny; ++j)
+    for (int i = 0; i < nx; ++i)
+      phi[static_cast<size_t>(j) * nx + i] =
+          sdf_polygon(px, py, n, g.xc[i + g.ng], g.yc[j + g.ng]);
+  const int nghost = ib_classify(phi.data(), nx, ny, type.data());
+
+  ib->nghost = nghost;
+  ib->nfallback = 0;
+  ib->fluid.allocate(cells);
+  for (size_t k = 0; k < cells; ++k) ib->fluid[k] = 1.0;  // 計算域邊界鬼格子視為流體
+  for (int j = 0; j < ny; ++j)
+    for (int i = 0; i < nx; ++i)
+      if (type[static_cast<size_t>(j) * nx + i] != CELL_FLUID)
+        ib->fluid[static_cast<size_t>(j + g.ng) * g.mx + (i + g.ng)] = 0.0;
+
+  ib->gidx.allocate(nghost);
+  ib->sidx.allocate(IB_NS * static_cast<size_t>(nghost));
+  ib->sw.allocate(IB_NS * static_cast<size_t>(nghost));
+  ib->nrm.allocate(2 * static_cast<size_t>(nghost));
+  ib->sidx2.allocate(IB_NS * static_cast<size_t>(nghost));
+  ib->sw2.allocate(IB_NS * static_cast<size_t>(nghost));
+  ib->d2.allocate(nghost);
+  ib->use_p_extrap = 1;
+  ib->nguard = 0;
+
+  double hmin = 1e300;
+  for (int i = 0; i < nx; ++i) hmin = std::fmin(hmin, g.dx[i + g.ng]);
+  for (int j = 0; j < ny; ++j) hmin = std::fmin(hmin, g.dy[j + g.ng]);
+
+  ib->dprobe = hmin;
+
+  // 2) 鬼格子：壁面最近點、法向、影像點、內插模板
+  int k = 0;
+  for (int j = 0; j < ny; ++j)
+    for (int i = 0; i < nx; ++i) {
+      if (type[static_cast<size_t>(j) * nx + i] != CELL_GHOST) continue;
+      const double x = g.xc[i + g.ng], y = g.yc[j + g.ng];
+      double cx = 0.0, cy = 0.0;
+      int seg = 0;
+      const double ph = sdf_polygon_closest(px, py, n, x, y, &cx, &cy, &seg);
+      double d = std::fabs(ph), nxn, nyn;
+      const int sb = (seg + 1) % n;
+      const double stx = px[sb] - px[seg], sty = py[sb] - py[seg];
+      const double tpar = ((cx - px[seg]) * stx + (cy - py[seg]) * sty) / (stx * stx + sty * sty);
+      if (tpar > 1e-9 && tpar < 1.0 - 1e-9) {
+        // 最近點在線段內部：法向就是面的法向（d 很小時比 (c-x)/d 準確；兩者在非平手時相同）。
+        // 注意：恰好落在頂點分角線上的點，兩個相鄰面距離相同（平手），法向會差 pi/M。
+        segment_normal_to_fluid(px, py, n, seg, cx, cy, 1e-7 * hmin, &nxn, &nyn);
+      } else if (d > 1e-10 * hmin) {
+        nxn = (cx - x) / d;  // 鬼格子在固體內：指向壁面 = 指向流體
+        nyn = (cy - y) / d;
+        if (ph > 0.0) { nxn = -nxn; nyn = -nyn; }  // 防呆（ghost 的 phi 應 <= 0）
+      } else {
+        segment_normal_to_fluid(px, py, n, seg, cx, cy, 1e-7 * hmin, &nxn, &nyn);
+        d = 0.0;
+      }
+      const double ix = x + 2.0 * d * nxn, iy = y + 2.0 * d * nyn;  // 影像點
+      long idx[IB_NS];
+      double w[IB_NS];
+      const int mode = stencil_at(g, ib->fluid.data(), ix, iy, idx, w);
+      if (mode < 0) {
+        std::fprintf(stderr, "ib2d_build_polygon: no fluid cell near image point of ghost (%d,%d)\n", i, j);
+        return 1;
+      }
+      if (mode >= 1) ++ib->nfallback;
+      ib->gidx[k] = static_cast<double>(static_cast<long>(j + g.ng) * g.mx + (i + g.ng));
+      for (int m = 0; m < IB_NS; ++m) {
+        ib->sidx[IB_NS * k + m] = static_cast<double>(idx[m]);
+        ib->sw[IB_NS * k + m] = w[m];
+      }
+      {
+        long idx2[IB_NS];
+        double w2[IB_NS];
+        const int mode2 = stencil_at(g, ib->fluid.data(), ix + ib->dprobe * nxn, iy + ib->dprobe * nyn, idx2, w2);
+        if (mode2 < 0) {
+          std::fprintf(stderr, "ib2d_build_polygon: no fluid cell near second probe of ghost (%d,%d)\n", i, j);
+          return 1;
+        }
+        for (int m = 0; m < IB_NS; ++m) {
+          ib->sidx2[IB_NS * k + m] = static_cast<double>(idx2[m]);
+          ib->sw2[IB_NS * k + m] = w2[m];
+        }
+        ib->d2[k] = 2.0 * d;
+      }
+      ib->nrm[2 * k] = nxn;
+      ib->nrm[2 * k + 1] = nyn;
+      ++k;
+    }
+  return 0;
+}
+
+static double hmin_of(const Grid2D& g) {
+  double h = 1e300;
+  for (int i = 0; i < g.nx; ++i) h = std::fmin(h, g.dx[i + g.ng]);
+  for (int j = 0; j < g.ny; ++j) h = std::fmin(h, g.dy[j + g.ng]);
+  return h;
+}
+
+// 在 (x,y) 內插 密度與壓力
+static int rho_p_at(const Solver2D* s, int c, double x, double y, double* rho, double* p) {
+  const Grid2D& g = s->grid;
+  const size_t cells = static_cast<size_t>(g.mx) * g.my;
+  const double gm = s->par.gamma;
+  const double* Uc = s->U.data() + static_cast<size_t>(c) * NVAR2D * cells;
+  long idx[IB_NS];
+  double w[IB_NS];
+  if (stencil_at(g, s->ib->fluid.data(), x, y, idx, w) < 0) return 1;
+  double r = 0.0, pp = 0.0;
+  for (int m = 0; m < IB_NS; ++m) {
+    if (w[m] == 0.0) continue;
+    const size_t q = static_cast<size_t>(idx[m]);
+    const double rq = Uc[q], mu = Uc[cells + q], mv = Uc[2 * cells + q], E = Uc[3 * cells + q];
+    r += w[m] * rq;
+    pp += w[m] * ((gm - 1.0) * (E - 0.5 * mu * mu / rq - 0.5 * mv * mv / rq));
+  }
+  *rho = r;
+  *p = pp;
+  return 0;
+}
+
+int ib2d_wall_state(const Solver2D* s, int c, double wx, double wy, double nx, double ny,
+                    double* rho, double* p) {
+  const double h = hmin_of(s->grid);
+  double r1, p1, r2, p2;
+  if (rho_p_at(s, c, wx + 1.5 * h * nx, wy + 1.5 * h * ny, &r1, &p1)) return 1;
+  if (rho_p_at(s, c, wx + 2.5 * h * nx, wy + 2.5 * h * ny, &r2, &p2)) return 1;
+  *rho = r1 - 1.5 * (r2 - r1);  // 斜率 (2-1)/h，往回 1.5h
+  *p = p1 - 1.5 * (p2 - p1);
+  return 0;
+}
+
+void ib2d_wall_force(const Solver2D* s, int c, const double* px, const double* py, int n,
+                     double* fx, double* fy) {
+  const double hmin = hmin_of(s->grid);
+  double Fx = 0.0, Fy = 0.0;
+  for (int a = 0; a < n; ++a) {
+    const int b = (a + 1) % n;
+    const double tx = px[b] - px[a], ty = py[b] - py[a];
+    const double L = std::sqrt(tx * tx + ty * ty);
+    const int ns = static_cast<int>(std::ceil(L / (0.5 * hmin))) + 1;
+    double nxn, nyn;
+    segment_normal_to_fluid(px, py, n, a, 0.5 * (px[a] + px[b]), 0.5 * (py[a] + py[b]), 1e-7 * hmin, &nxn, &nyn);
+    for (int q = 0; q < ns; ++q) {
+      const double f = (q + 0.5) / ns;
+      double rw, pw;
+      if (ib2d_wall_state(s, c, px[a] + f * tx, py[a] + f * ty, nxn, nyn, &rw, &pw)) continue;
+      Fx += -pw * nxn * (L / ns);
+      Fy += -pw * nyn * (L / ns);
+    }
+  }
+  *fx = Fx;
+  *fy = Fy;
+}
+
+}  // namespace cfd

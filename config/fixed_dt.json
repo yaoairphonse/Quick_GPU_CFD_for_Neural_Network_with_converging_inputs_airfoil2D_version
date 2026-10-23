@@ -1,0 +1,10 @@
+{
+  "solver": {
+    "mode": "time",
+    "stop_time_star": 0.01,
+    "time_step": {
+      "mode": "fixed",
+      "dt_seconds": 1e-07
+    }
+  }
+}

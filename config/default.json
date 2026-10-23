@@ -1,0 +1,183 @@
+{
+  "freestream": {
+    "Mach": 1.65,
+    "AOA_degrees": 1.5,
+    "p_Pa": 18754.0,
+    "T_K": 216.65,
+    "chord_m": 1.0,
+    "gamma": 1.4,
+    "R_J_kgK": 287.05
+  },
+  "boundaries": {
+    "xmin": "farfield",
+    "xmax": "farfield",
+    "ymin": "farfield",
+    "ymax": "farfield",
+    "outlet_pressure_Pa": 18754.0
+  },
+  "physics": {
+    "turbulence": "sa-neg",
+    "viscosity": "sutherland",
+    "constant_mu_Pa_s": null,
+    "sutherland": {
+      "mu0_Pa_s": 1.716e-05,
+      "T0_K": 273.15,
+      "S_K": 110.4
+    },
+    "sa_nu_inf_over_nu": 3.0,
+    "wall_probe_min_h": 0.25
+  },
+  "solver": {
+    "backend": "cuda",
+    "flux": "hllc",
+    "sa_layout": "fused",
+    "CFL": 0.15,
+    "viscous_CFL": 0.1,
+    "SA_CFL": 0.1,
+    "time_step": {
+      "mode": "cfl",
+      "dt_seconds": null
+    },
+    "mode": "steady",
+    "stop_time_star": 100.0,
+    "budget_seconds": 118.0,
+    "moment_reference_xy_c": [
+      0.25,
+      0.0
+    ],
+    "convergence": {
+      "raw_tolerance": 0.001,
+      "coefficient_change": 0.005,
+      "hold": 5,
+      "min_time_star": 3.0,
+      "check_period_star": 0.5,
+      "residual_region_xy_c": [
+        -1.0,
+        3.0,
+        -1.0,
+        1.0
+      ]
+    }
+  },
+  "mesh": {
+    "bounds_xy_c": [
+      -7.0,
+      14.0,
+      -10.0,
+      10.0
+    ],
+    "base_shape": [
+      42,
+      40
+    ],
+    "wall_buffer": 4,
+    "max_cells": 2000000,
+    "profiles": {
+      "LF1": {
+        "levels": 5,
+        "boxes": [
+          [
+            -0.5,
+            2.0,
+            -0.75,
+            0.75,
+            3
+          ],
+          [
+            1.0,
+            4.0,
+            -0.35,
+            0.65,
+            3
+          ],
+          [
+            -2.0,
+            6.0,
+            -3.0,
+            3.0,
+            1
+          ]
+        ]
+      },
+      "LF2": {
+        "levels": 6,
+        "boxes": [
+          [
+            -0.5,
+            2.0,
+            -0.75,
+            0.75,
+            4
+          ],
+          [
+            1.0,
+            4.0,
+            -0.35,
+            0.65,
+            3
+          ],
+          [
+            -2.0,
+            6.0,
+            -3.0,
+            3.0,
+            1
+          ],
+          [
+            2.0,
+            3.25,
+            -0.35,
+            0.65,
+            4
+          ]
+        ]
+      }
+    }
+  },
+  "output": {
+    "fields": [
+      "x",
+      "y",
+      "p",
+      "rho",
+      "u",
+      "v",
+      "mach",
+      "temperature"
+    ],
+    "formats": [
+      "npz",
+      "csv"
+    ],
+    "region_xy_c": null,
+    "sample_points_xy_c": [],
+    "surface": true,
+    "surface_patches": [
+      1,
+      2,
+      3
+    ],
+    "loads": true,
+    "load_fields": [
+      "drag",
+      "lift",
+      "fx",
+      "fy",
+      "pressure_force_x",
+      "pressure_force_y",
+      "pressure_drag",
+      "pressure_lift",
+      "viscous_force_x",
+      "viscous_force_y",
+      "viscous_drag",
+      "viscous_lift",
+      "moment_z",
+      "pressure_moment_z",
+      "viscous_moment_z",
+      "CD",
+      "CL",
+      "CM_z"
+    ],
+    "volume": true
+  }
+}

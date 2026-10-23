@@ -1,0 +1,25 @@
+# Local builds (including backups created after moving the project)
+/build*/
+
+# Python caches and environments
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Generated simulations and validation artifacts; retain scripts and JSON summaries
+/runs/
+/validation/*/
+/validation/*.log
+
+# Local credentials and agent settings
+.env
+.env.*
+!.env.example
+/.aws/
+/.agents/
+/.codex/
+
+# Editor and operating-system files
+.DS_Store
+Thumbs.db

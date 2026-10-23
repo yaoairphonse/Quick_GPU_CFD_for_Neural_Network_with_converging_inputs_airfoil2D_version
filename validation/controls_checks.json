@@ -1,0 +1,29 @@
+{
+  "passed": true,
+  "cases": [
+    {
+      "name": "subsonic_outlet",
+      "passed": true,
+      "steps": 65,
+      "physical_time": 0.01,
+      "SI_EOS_relative_error": 4.4380672045770435e-16,
+      "resolved_config": "/mnt/c/Users/lyao76/OneDrive - Georgia Institute of Technology/CFD_self/CFD_for_NNLCI/quick_CFD_for_NNLCI_airfoil_opt_case/validation/control_subsonic_outlet/config.resolved.json"
+    },
+    {
+      "name": "fixed_dt",
+      "passed": true,
+      "steps": 339,
+      "physical_time": 0.01,
+      "SI_EOS_relative_error": 4.437197540246927e-16,
+      "resolved_config": "/mnt/c/Users/lyao76/OneDrive - Georgia Institute of Technology/CFD_self/CFD_for_NNLCI/quick_CFD_for_NNLCI_airfoil_opt_case/validation/control_fixed_dt/config.resolved.json"
+    },
+    {
+      "name": "cpu_ausm",
+      "passed": true,
+      "steps": 123,
+      "physical_time": 0.01,
+      "SI_EOS_relative_error": 4.4388116925026247e-16,
+      "resolved_config": "/mnt/c/Users/lyao76/OneDrive - Georgia Institute of Technology/CFD_self/CFD_for_NNLCI/quick_CFD_for_NNLCI_airfoil_opt_case/validation/control_cpu_ausm/config.resolved.json"
+    }
+  ]
+}

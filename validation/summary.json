@@ -1,0 +1,79 @@
+{
+  "passed": true,
+  "core_hashes_unchanged": true,
+  "short_cases": 20,
+  "short_max_relative_Linf": 0.0,
+  "controls": {
+    "passed": true,
+    "cases": [
+      {
+        "name": "subsonic_outlet",
+        "passed": true,
+        "steps": 65,
+        "physical_time": 0.01,
+        "SI_EOS_relative_error": 4.4380672045770435e-16,
+        "resolved_config": "/mnt/c/Users/lyao76/OneDrive - Georgia Institute of Technology/CFD_self/CFD_for_NNLCI/quick_CFD_for_NNLCI_airfoil_opt_case/validation/control_subsonic_outlet/config.resolved.json"
+      },
+      {
+        "name": "fixed_dt",
+        "passed": true,
+        "steps": 339,
+        "physical_time": 0.01,
+        "SI_EOS_relative_error": 4.437197540246927e-16,
+        "resolved_config": "/mnt/c/Users/lyao76/OneDrive - Georgia Institute of Technology/CFD_self/CFD_for_NNLCI/quick_CFD_for_NNLCI_airfoil_opt_case/validation/control_fixed_dt/config.resolved.json"
+      },
+      {
+        "name": "cpu_ausm",
+        "passed": true,
+        "steps": 123,
+        "physical_time": 0.01,
+        "SI_EOS_relative_error": 4.4388116925026247e-16,
+        "resolved_config": "/mnt/c/Users/lyao76/OneDrive - Georgia Institute of Technology/CFD_self/CFD_for_NNLCI/quick_CFD_for_NNLCI_airfoil_opt_case/validation/control_cpu_ausm/config.resolved.json"
+      }
+    ]
+  },
+  "full_steady": [
+    {
+      "profile": "LF1",
+      "passed": true,
+      "cells": 4725,
+      "steps": 48007,
+      "physical_time_star": 11.5,
+      "relative_L1": 0.0,
+      "relative_Linf": 0.0,
+      "SA_relative_Linf": 0.0,
+      "mesh_seconds": 0.064228684,
+      "GPU_event_seconds": 12.326757169365823,
+      "advance_wall_seconds": 12.435918505,
+      "process_seconds": 13.312536587996874,
+      "export_seconds": 0.9334386170085054,
+      "Cl": 0.04724450534066958,
+      "Cd": 0.09745095068422303,
+      "Cm": 0.04595667085359941
+    },
+    {
+      "profile": "LF2",
+      "passed": true,
+      "cells": 9533,
+      "steps": 90416,
+      "physical_time_star": 11,
+      "relative_L1": 0.0,
+      "relative_Linf": 0.0,
+      "SA_relative_Linf": 0.0,
+      "mesh_seconds": 0.12741752,
+      "GPU_event_seconds": 22.658680417120696,
+      "advance_wall_seconds": 22.917041892,
+      "process_seconds": 23.81552320899209,
+      "export_seconds": 0.6673188010026934,
+      "Cl": 0.0468601856179628,
+      "Cd": 0.09532798820576606,
+      "Cm": 0.04674307795674935
+    }
+  ],
+  "default_pipeline_seconds": 39.433767295995494,
+  "geometry_preparation_seconds": 0.2235425649996614,
+  "reexport_without_solver_passed": true,
+  "independent_CPU_build_passed": true,
+  "mesh_only_passed": true,
+  "physical_scope": "mechanical SA-neg/laminar, kappa=0; coarse high-Re qualitative tool, not wall-resolved certification"
+}
