@@ -17,7 +17,7 @@ Params2D params2d_default() {
   p.flux = FLUX_HLLC;
   p.limiter = LIM_VENKAT;
   p.venkat_k = 5.0;
-  p.ausm_mco = 1.0;  // 參考 Mach 數；可壓縮問題取 1（見 flux.h）
+  p.ausm_mco = 1.0;  // Reference Mach number: use 1 for compressible cases; see flux.h.
   for (int k = 0; k < 4; ++k) p.bc[k] = BC_TRANSMISSIVE;
   p.dt_fixed = 0.0;
   p.time_integrator = TIME_SSP_RK3;
@@ -33,7 +33,7 @@ Params2D params2d_default() {
 }
 
 // ---------------------------------------------------------------------------
-// 網格
+// Grid construction.
 // ---------------------------------------------------------------------------
 void grid2d_stretch_faces(int n, double a, double b, Stretch s, double* xf) {
   const double L = b - a;
@@ -62,17 +62,17 @@ void grid2d_stretch_faces(int n, double a, double b, Stretch s, double* xf) {
   xf[n] = b;
 }
 
-// 由面座標建立格心、格寬與鬼格子的幾何。週期邊界用平移，其餘用鏡像。
+// Build cell centers, widths, and ghost geometry from face coordinates; translate periodic ghosts and mirror the others.
 static void build_axis(int n, int ng, double a, double b, int bc_lo, int bc_hi,
                        bool uniform, Array& xf, Array& xc, Array& dx) {
   const int m = n + 2 * ng;
   xc.allocate(m);
   dx.allocate(m);
   if (uniform) {
-    // 均勻軸：每格寬度「恰好」等於 h（不是 xf[i+1]-xf[i]，那會有 1e-16 的捨入差）。
-    // 這讓 2D 均勻網格與 1D 求解器的幾何逐位元相同，也讓兩個方向完全對稱。
+    // On a uniform axis, each width equals h exactly; subtracting xf values would introduce ~1e-16 roundoff.
+    // This gives bitwise-identical geometry to the uniform 1D solver and exact directional symmetry.
     const double h = (b - a) / n;
-    // 鬼格子也用同一條線性公式（與 1D 一致），否則 Venkat 的 hl/hr 會有 1ulp 差。
+    // Use the same linear formula for ghost centers as in 1D to avoid one-ulp differences in Venkatakrishnan hl/hr.
     for (int i = -ng; i < n + ng; ++i) {
       xc[i + ng] = a + (i + 0.5) * h;
       dx[i + ng] = h;
@@ -187,9 +187,9 @@ double solver2d_integral(const Solver2D* s, int c, int var) {
 }
 
 // ---------------------------------------------------------------------------
-// 立即邊界法的鬼格子：由影像點的流場決定。
-//   影像點 = 鬼格子對壁面的鏡像點；用模板（4 個流體格的權重）內插原始變數，
-//   密度與壓力照抄（壁面法向零梯度），速度的法向分量反向（滑移壁：壁面上法向速度 = 0）。
+// Immersed-boundary ghost values are reconstructed from image-point flow states.
+// The image point mirrors the ghost across the wall; interpolate primitives using the fluid-cell stencil.
+// Copy density/pressure (zero normal gradients) and reverse normal velocity for a slip wall.
 // ---------------------------------------------------------------------------
 static void apply_ib(const Solver2D* s, double* U) {
   const IB2D* ib = s->ib;
@@ -243,8 +243,8 @@ static void apply_ib(const Solver2D* s, double* U) {
 }
 
 // ---------------------------------------------------------------------------
-// 邊界條件。先填 x 方向（內部各列），再填 y 方向（含 x 鬼格子的整列），
-// 這樣四個角落的鬼格子也有定義。
+// Apply boundary conditions in x on interior rows, then in y on rows including x ghosts,
+// so that all four corner ghost regions are defined.
 // ---------------------------------------------------------------------------
 void solver2d_apply_bc(const Solver2D* s, double* U) {
   const Grid2D& g = s->grid;
@@ -252,20 +252,20 @@ void solver2d_apply_bc(const Solver2D* s, double* U) {
   for (int c = 0; c < s->ncase; ++c) {
     for (int v = 0; v < NVAR2D; ++v) {
       double* base = U + (static_cast<size_t>(c) * NVAR2D + v) * cells;
-      // x 方向：x 邊界的 BC 只看 xmin 與 xmax；各側 BC 可不同（週期必須成對）。
+      // Use xmin/xmax conditions independently; periodic boundaries must be paired.
       for (int j = 0; j < g.ny; ++j) {
         double* q = base + static_cast<size_t>(j + g.ng) * g.mx + g.ng;
         const double sgn = (v == 1) ? -1.0 : 1.0;
-        // xmin 側與 xmax 側分開處理（可能一側反射一側穿透）
+        // Handle xmin/xmax separately, allowing reflection on one side and transmission on the other.
         for (int k = 1; k <= g.ng; ++k) {
-          // 左側
+          // Left side.
           if (s->par.bc[0] == BC_PERIODIC)
             q[-k] = q[g.nx - k];
           else if (s->par.bc[0] == BC_REFLECT)
             q[-k] = sgn * q[k - 1];
           else
             q[-k] = q[0];
-          // 右側
+          // Right side.
           if (s->par.bc[1] == BC_PERIODIC)
             q[g.nx - 1 + k] = q[k - 1];
           else if (s->par.bc[1] == BC_REFLECT)
@@ -274,7 +274,7 @@ void solver2d_apply_bc(const Solver2D* s, double* U) {
             q[g.nx - 1 + k] = q[g.nx - 1];
         }
       }
-      // y 方向：對含 x 鬼格子的整列（i = -ng .. nx+ng-1）
+      // Apply y conditions over the full row, including x ghosts: i = -ng..nx+ng-1.
       const double sgny = (v == 2) ? -1.0 : 1.0;
       for (int i = -g.ng; i < g.nx + g.ng; ++i) {
         double* q = base + static_cast<size_t>(g.ng) * g.mx + (i + g.ng);
@@ -299,10 +299,10 @@ void solver2d_apply_bc(const Solver2D* s, double* U) {
 }
 
 // ---------------------------------------------------------------------------
-// 殘差
-//   1) 守恆 -> 原始  2) 兩個方向的限制後斜率  3) x 面與 y 面通量  4) 每格收集 4 個面
-// 面通量只算一次（左邊或下邊的格子當 L，右邊或上邊的格子當 R），所以相鄰兩格看到的
-// 是同一個值（逐位元相同），守恆在代數上成立，也不需要原子加。
+// Residual assembly.
+// 1) Conserved to primitive; 2) directional limited slopes; 3) x/y face fluxes; 4) gather four faces per cell.
+// Compute each face flux once with L on its left/bottom and R on its right/top; neighboring cells
+// use the same bits with opposite signs, ensuring algebraic conservation without atomic addition.
 // ---------------------------------------------------------------------------
 static inline void face_flux(const Params2D& par, double mco, double rL,
                              double unL, double utL, double pL, double rR,
@@ -338,7 +338,7 @@ void solver2d_residual(const Solver2D* s, const double* U, double* R, double* W,
     double* FYc = FY + static_cast<size_t>(c) * NVAR2D * nfy;
     const double mco = s->mco[c];
 
-    // 1) 原始變數（含鬼格子）。W 的四個變數：rho, u, v, p
+    // 1) Primitive variables including ghosts: W = (rho,u,v,p).
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) if(cells >= 4096)
 #endif
@@ -353,8 +353,8 @@ void solver2d_residual(const Solver2D* s, const double* U, double* R, double* W,
       Wc[3 * cells + k] = (gm - 1.0) * (E - 0.5 * mu * mu / r - 0.5 * mv * mv / r);
     }
 
-    // 2) 斜率。x 斜率：各內部列 j，i = -1 .. nx。y 斜率：各內部行 i，j = -1 .. ny。
-    // 將 (variable,row/column) 攤平成獨立工作，讓單一 case 也能用到所有 CPU cores。
+    // 2) Slopes: x for each interior row j with i=-1..nx; y for each interior column i with j=-1..ny.
+    // Flatten (variable,row/column) into independent tasks so one case can use all CPU cores.
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) if(cells >= 4096)
 #endif
@@ -388,7 +388,7 @@ void solver2d_residual(const Solver2D* s, const double* U, double* R, double* W,
         }
     }
 
-    // IB：非流體格（鬼格子與固體）的斜率設 0，使壁面側的面狀態就是鬼格子的值（一階）。
+    // Set slopes to zero in IB ghosts and solid cells, giving first-order ghost states on wall-side faces.
     if (s->ib != nullptr) {
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) if(cells >= 4096)
@@ -411,7 +411,7 @@ void solver2d_residual(const Solver2D* s, const double* U, double* R, double* W,
     const double* Sv = SXc + 2 * cells;
     const double* Sp = SXc + 3 * cells;
 
-    // 3a) x 面：面 i（i = 0..nx）在格子 i-1 與 i 之間。法向 = u，切向 = v。
+    // 3a) x face i=0..nx lies between cells i-1 and i; normal velocity u, tangential velocity v.
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) if(cells >= 4096)
 #endif
@@ -427,14 +427,14 @@ void solver2d_residual(const Solver2D* s, const double* U, double* R, double* W,
                   Wu[Rr] - hR * Su[Rr], Wv[Rr] - hR * Sv[Rr],
                   Wp[Rr] - hR * Sp[Rr], F);
         const size_t f = static_cast<size_t>(j) * (nx + 1) + i;
-        FXc[0 * nfx + f] = F[0];  // 質量
-        FXc[1 * nfx + f] = F[1];  // x 動量 = 法向動量
-        FXc[2 * nfx + f] = F[2];  // y 動量 = 切向動量
-        FXc[3 * nfx + f] = F[3];  // 能量
+        FXc[0 * nfx + f] = F[0];  // Mass.
+        FXc[1 * nfx + f] = F[1];  // x momentum = normal momentum.
+        FXc[2 * nfx + f] = F[2];  // y momentum = tangential momentum.
+        FXc[3 * nfx + f] = F[3];  // Energy.
       }
     }
 
-    // 3b) y 面：面 j（j = 0..ny）在格子 j-1 與 j 之間。法向 = v，切向 = u。
+    // 3b) y face j=0..ny lies between cells j-1 and j; normal velocity v, tangential velocity u.
     const double* Tr = SYc;
     const double* Tu = SYc + cells;
     const double* Tv = SYc + 2 * cells;
@@ -454,14 +454,14 @@ void solver2d_residual(const Solver2D* s, const double* U, double* R, double* W,
                   Wv[Rr] - hR * Tv[Rr], Wu[Rr] - hR * Tu[Rr],
                   Wp[Rr] - hR * Tp[Rr], F);
         const size_t f = static_cast<size_t>(j) * nx + i;
-        FYc[0 * nfy + f] = F[0];  // 質量
-        FYc[1 * nfy + f] = F[2];  // x 動量 = 切向動量
-        FYc[2 * nfy + f] = F[1];  // y 動量 = 法向動量
-        FYc[3 * nfy + f] = F[3];  // 能量
+        FYc[0 * nfy + f] = F[0];  // Mass.
+        FYc[1 * nfy + f] = F[2];  // x momentum = tangential momentum.
+        FYc[2 * nfy + f] = F[1];  // y momentum = normal momentum.
+        FYc[3 * nfy + f] = F[3];  // Energy.
       }
     }
 
-    // 4) 每格收集自己的 4 個面
+    // 4) Each cell gathers its four faces.
     const int residual_tasks = NVAR2D * ny;
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) if(cells >= 4096)
@@ -485,7 +485,7 @@ void solver2d_residual(const Solver2D* s, const double* U, double* R, double* W,
 }
 
 // ---------------------------------------------------------------------------
-// 時間步與 SSP-RK3
+// Time-step selection and SSP-RK3.
 // ---------------------------------------------------------------------------
 static void compute_dt(Solver2D* s, double tend) {
   const Grid2D& g = s->grid;
@@ -506,7 +506,7 @@ static void compute_dt(Solver2D* s, double tend) {
         const double u = mu / r, v = mv / r;
         const double p = (gm - 1.0) * (E - 0.5 * mu * mu / r - 0.5 * mv * mv / r);
         const double a = std::sqrt(gm * p / r);
-        // 2D 顯式穩定條件：兩個方向的波速除以格寬相加
+        // 2D explicit stability rate: sum directional wave speeds divided by cell widths.
         smax = std::max(smax, (std::fabs(u) + a) / g.dx[i + g.ng] +
                                   (std::fabs(v) + a) / g.dy[j + g.ng]);
     }
@@ -569,7 +569,7 @@ static void report_bad_state(const Solver2D* s, const double* U, const char* sta
       }
 }
 
-// out = a*A + b*(B + dt*R)，各 case 用自己的 dt；只更新內部格。
+// out = a*A + b*(B + dt*R), with a separate dt for each case; update interior cells only.
 static void rk_combine(const Solver2D* s, double a, const double* A, double b,
                        const double* B, const double* R, double* out) {
   const Grid2D& g = s->grid;
@@ -677,7 +677,7 @@ int solver2d_run(Solver2D* s, double tend, long maxsteps) {
     }
 
     for (int c = 0; c < s->ncase; ++c) {
-      if (s->dt[c] <= 0.0) continue;  // 這個 case 已到 tend
+      if (s->dt[c] <= 0.0) continue;  // This case has reached tend.
       const int tasks = NVAR2D * g.ny;
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) if(cells >= 4096)

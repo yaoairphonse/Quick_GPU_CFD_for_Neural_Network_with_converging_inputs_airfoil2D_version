@@ -1,17 +1,28 @@
-# 下次開工記錄
+# Development notes
 
-## 下一階段優先：低 Mach preconditioning（使用者指定，2026-10-20）
+## Current priorities, updated 2026-10-23
 
-使用者要求本次先記錄，下一次優先讓整個程式與獨立airfoil pipeline支援低速流場。
-順序調整為：**低Mach preconditioning → 後續熱傳**。本次只更新紀錄，尚未實作preconditioner。
+1. Publish a complete English edition of the README, Guide, source comments, CLI descriptions, and generated reports. Preserve the Chinese originals locally under `local_chinese/`.
+2. Continue the local low-Mach preconditioning implementation and run a Mach 0.2 NACA4412 case.
+3. Implement and run a full 3D viscous sphere case with a one-equation Spalart–Allmaras model and a no-slip wall. Keep the development local until its results have been verified.
+4. Update the Guide with methods, reproducible commands, flow visualizations, and the actual validation/convergence status before publishing numerical extensions.
 
-1. 下次先查paper/book並盤點現有density-based離散，建立M=0.1／0.01／0.001的低速baseline，記清物理參數與Re。
-2. 評估時間／pseudo-time預條件與低Mach通量耗散的一致處理，並納入farfield／outlet、cut-cell、黏性、SA及GPU路徑。
-3. 穩態加速與真實非定常分開設計；若採dual-time，保留正確physical-time導數，不直接改變真實時間物理。
-4. 事前登記壓力／速度誤差、守恆、正性、穩態與CPU/GPU門檻；沿用LF1/LF2與十翼型回歸，保留跨音／超音速既有能力。
-5. 量測可用解總時間、步數、GPU event／advance／process，不只看每步或GPU使用率；不預先承諾倍率。
+The published pipeline in this English edition remains two-dimensional, with no low-Mach preconditioning switch. Local implementation work must not be described as a released or validated capability.
 
-熱傳後續再接：流體Fourier熱通量、Pr／Prt、定溫／絕熱壁；若要固體內部溫度，再加固體能量方程及流固熱耦合。
-目前仍κ=0；選定固體材料本身不代表已完成熱傳。現有可輸出溫度是由氣體總能量／EOS恢復。
+## Low-Mach verification plan
 
-當前入口：quick_cfd.py／config/default.json／GUIDE.html。LF1約4700CV、LF2約9500CV；SA-neg＋Sutherland＋fused，M1.65既有回歸保留。
+The earlier priority, recorded on 2026-10-20, was **low-Mach preconditioning before heat transfer**.
+
+- Review the density-based operators and primary references. Establish M=0.1, 0.01, and 0.001 baselines with explicit physical conditions and Reynolds numbers; add the requested M=0.2 NACA4412 case.
+- Treat pseudo-time preconditioning and low-Mach flux dissipation consistently, including farfield/outlet boundaries, cut cells, viscosity, SA, and CPU/CUDA paths.
+- Separate steady acceleration from physical unsteady evolution. A future dual-time method must preserve the correct physical-time derivative.
+- Register pressure/velocity error, conservation, positivity, steady-state, and CPU/GPU tolerances before claiming validation. Retain LF1/LF2, ten-airfoil comparisons, and existing transonic/supersonic capability.
+- Measure total time to a useful solution, steps, CUDA event time, advance wall time, and process time. Do not infer speedups from per-step cost or GPU utilization alone.
+
+## Later thermal work
+
+Add fluid Fourier heat fluxes, Pr/Prt, and prescribed-temperature/adiabatic walls. Solid internal temperatures additionally require a solid energy equation and fluid/solid interface coupling.
+
+The current mechanical model has κ=0. Selecting a solid material does not implement heat transfer. Existing temperature output is recovered from total energy and the equation of state.
+
+Entry points: `quick_cfd.py`, `config/default.json`, and `GUIDE.html`. The existing M=1.65 baseline uses SA-neg, Sutherland viscosity, fused kernels, and approximately 4,700/9,500 CVs for LF1/LF2.

@@ -9,6 +9,7 @@ venv/
 
 # Generated simulations and validation artifacts; retain scripts and JSON summaries
 /runs/
+/local_chinese/
 /validation/*/
 /validation/*.log
 

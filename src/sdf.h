@@ -1,8 +1,8 @@
-// sdf.h -- 2D 有號距離函數（SDF）與立即邊界法（IB）的格子分類。
+// sdf.h -- 2D signed-distance functions and immersed-boundary cell classification.
 //
-// 約定：固體內部 SDF < 0，流體 > 0；|SDF| 是到壁面（多邊形）的歐氏距離。
-// 多邊形是閉合折線（最後一點接回第一點），頂點順序不拘。
-// 全部是 header-only 的小函數，沒有 new/delete；陣列由呼叫者提供。
+// Convention: SDF<0 in solid, >0 in fluid; |SDF| is the Euclidean distance to the polygon wall.
+// The polygon is a closed polyline, connecting the last vertex to the first; either orientation is accepted.
+// Small header-only functions; arrays are caller-owned and no new/delete is used.
 #ifndef CFD_SDF_H
 #define CFD_SDF_H
 
@@ -11,7 +11,7 @@
 
 namespace cfd {
 
-// 點 (x,y) 到線段 (ax,ay)-(bx,by) 的最短距離平方
+// Squared minimum distance from (x,y) to segment (ax,ay)-(bx,by).
 inline double seg_dist2(double x, double y, double ax, double ay, double bx, double by) {
   const double dx = bx - ax, dy = by - ay;
   const double l2 = dx * dx + dy * dy;
@@ -24,11 +24,11 @@ inline double seg_dist2(double x, double y, double ax, double ay, double bx, dou
   return px * px + py * py;
 }
 
-// 同 sdf_polygon，另外回傳壁面上最近點 (*cx,*cy) 與該線段編號 *seg。
+// As sdf_polygon, also returning the nearest wall point (*cx,*cy) and segment index *seg.
 inline double sdf_polygon_closest(const double* px, const double* py, int n, double x,
                                   double y, double* cx, double* cy, int* seg);
 
-// 射線法（奇偶交點數）：點是否在閉合多邊形內。
+// Ray casting with odd/even intersections: test whether a point lies inside the closed polygon.
 inline bool point_in_polygon(const double* px, const double* py, int n, double x, double y) {
   bool in = false;
   for (int i = 0, j = n - 1; i < n; j = i++) {
@@ -41,7 +41,7 @@ inline bool point_in_polygon(const double* px, const double* py, int n, double x
   return in;
 }
 
-// 多邊形的有號距離（內部為負）。O(n) 暴力法，對 LF 網格的規模足夠。
+// Polygon signed distance, negative inside. An O(n) search is sufficient for these low-fidelity grids.
 inline double sdf_polygon(const double* px, const double* py, int n, double x, double y) {
   double d2 = 1e300;
   for (int i = 0, j = n - 1; i < n; j = i++) {
@@ -69,40 +69,40 @@ inline double sdf_polygon_closest(const double* px, const double* py, int n, dou
       best = d2;
       *cx = qx;
       *cy = qy;
-      *seg = j;  // 線段 j -> i
+      *seg = j;  // Segment j -> i.
     }
   }
   const double d = std::sqrt(best);
   return point_in_polygon(px, py, n, x, y) ? -d : d;
 }
 
-// 多邊形面積（鞋帶公式，取絕對值）
+// Absolute polygon area from the shoelace formula.
 inline double polygon_area(const double* px, const double* py, int n) {
   double a = 0.0;
   for (int i = 0, j = n - 1; i < n; j = i++) a += px[j] * py[i] - px[i] * py[j];
   return 0.5 * std::fabs(a);
 }
 
-// NACA 對稱翼型 00tt 的半厚度（弦長 1，後緣閉合係數 -0.1036）。x in [0,1]。
+// NACA symmetric 00tt half-thickness for unit chord and closed trailing-edge coefficient -0.1036; x in [0,1].
 inline double naca_halfthickness(double x, double t) {
   const double s = std::sqrt(x > 0.0 ? x : 0.0);
   return 5.0 * t * (0.2969 * s - 0.1260 * x - 0.3516 * x * x + 0.2843 * x * x * x -
                     0.1036 * x * x * x * x);
 }
 
-// 產生 NACA 對稱翼型的閉合多邊形：從後緣沿上表面到前緣再沿下表面回來，
-// 頂點用餘弦間距（前緣加密）。npan 是每個表面的段數；總頂點數 = 2*npan+1
-// （上表面 npan 點、下表面含前緣與後緣共 npan+1 點）。呼叫者提供長度 2*npan+1 的 px、py，函數回傳頂點數。攻角 aoa_deg 繞 (0.25,0) 旋轉幾何
-// （只給壁面幾何測試用；規劃書的 AOA 預設是旋轉自由流而不是幾何）。
+// Generate a closed symmetric NACA polygon from trailing edge along upper surface to leading edge and back along lower surface.
+// Cosine spacing clusters near the leading edge. npan panels per surface give 2*npan+1 vertices:
+// npan upper vertices and npan+1 lower vertices including both edges. Caller supplies px,py of length 2*npan+1; return vertex count.
+// Rotate geometry by aoa_deg about (0.25,0) only for wall-geometry tests; the pipeline rotates freestream instead.
 inline int naca_polygon(double t, int npan, double aoa_deg, double* px, double* py) {
   const double pi = 3.14159265358979323846;
   int k = 0;
-  for (int i = 0; i < npan; ++i) {  // 上表面：x 由 1 到接近 0（不含前緣點）
+  for (int i = 0; i < npan; ++i) {  // Upper surface: x decreases from 1 toward 0, excluding the leading edge.
     const double th = pi * (1.0 - static_cast<double>(i) / npan);
     const double x = 0.5 * (1.0 - std::cos(th));
     px[k] = x; py[k] = naca_halfthickness(x, t); ++k;
   }
-  for (int i = 0; i <= npan; ++i) {  // 下表面：x 由 0（前緣）到 1（後緣）
+  for (int i = 0; i <= npan; ++i) {  // Lower surface: x increases from 0 at the leading edge to 1 at the trailing edge.
     const double th = pi * static_cast<double>(i) / npan;
     const double x = 0.5 * (1.0 - std::cos(th));
     px[k] = x; py[k] = -naca_halfthickness(x, t); ++k;
@@ -118,7 +118,7 @@ inline int naca_polygon(double t, int npan, double aoa_deg, double* px, double* 
   return k;
 }
 
-// 圓的內接多邊形（m 個頂點）。測試用：與解析 SDF r-R 比較。
+// Inscribed m-vertex circle polygon, for comparisons with the analytic SDF r-R.
 inline void circle_polygon(double cx, double cy, double R, int m, double* px, double* py,
                            double phase = 0.0) {
   const double pi = 3.14159265358979323846;
@@ -128,14 +128,14 @@ inline void circle_polygon(double cx, double cy, double R, int m, double* px, do
   }
 }
 
-// 格子類型
+// Cell types.
 enum CellType { CELL_FLUID = 0, CELL_GHOST = 1, CELL_SOLID = 2 };
 
-// 以格心 SDF 分類（phi 與 type 長度 nx*ny，i 為快軸）：
-//   phi > 0               -> 流體
-//   phi <= 0 且 4 個鄰格中有流體 -> 鬼格子（壁面內側的一層）
-//   其他 phi <= 0          -> 固體（深處，不參與計算）
-// 回傳鬼格子數。邊界外的鄰格視為不存在。
+// Classify from the cell-center SDF; phi/type have length nx*ny with i varying fastest:
+//   phi > 0                     -> fluid.
+//   phi <= 0 with a fluid face neighbor -> ghost, one layer inside the wall.
+//   Other phi <= 0              -> solid interior, excluded from the calculation.
+// Return the ghost count. Neighbors outside the domain are absent.
 inline int ib_classify(const double* phi, int nx, int ny, unsigned char* type) {
   int nghost = 0;
   for (int j = 0; j < ny; ++j)

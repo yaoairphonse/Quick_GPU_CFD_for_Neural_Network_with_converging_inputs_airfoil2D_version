@@ -1,9 +1,9 @@
-// euler1d.h -- 1D 可壓縮 Euler 求解器（cell-centered 有限體積，守恆形式）。
+// euler1d.h -- 1D compressible Euler solver: conservative, cell-centered finite volumes.
 //
-// 這是第 1 週的實驗載體：先把「通量、重構、限制器、時間積分、批次維度」在 1D
-// 驗證好，再搬到 2D。資料結構已經是最後的樣子：
-//   U[(case * NVAR + var) * m + (i + ng)]，m = n + 2*ng，ng = 鬼格子層數。
-// 每個 case 有自己的時間與時間步，所以「批次結果」必須與「單 case 結果」逐位元相同。
+// The initial 1D test bed validates fluxes, reconstruction, limiters, time integration, and batching
+// before extending them to 2D. The data layout already follows the final design:
+//   U[(case * NVAR + var) * m + (i + ng)], m = n + 2*ng; ng is the ghost-cell count.
+// Each case has its own time and time step; batched and individual results must match bit for bit.
 #ifndef CFD_EULER1D_H
 #define CFD_EULER1D_H
 
@@ -19,61 +19,61 @@ struct Params1D {
   double cfl;
   int flux;       // FluxType
   int limiter;    // LimiterType
-  double venkat_k;  // Venkatakrishnan 的 K；eps^2 = (K*dx)^3。K 越大越不限制
-  double ausm_mco;  // AUSM+-up 的截斷 Mach 數
+  double venkat_k;  // Venkatakrishnan K; eps^2 = (K*dx)^3. Larger K means weaker limiting.
+  double ausm_mco;  // AUSM+-up cutoff Mach number.
   int bc;         // BCType
-  double dt_fixed;  // > 0 時以此值當時間步（測試用，例如與 2D 逐位元比對）；0 = 用 CFL
+  double dt_fixed;  // Positive: fixed time step for tests, such as bitwise 1D/2D comparisons; zero: CFL-based stepping.
 };
 
 struct Grid1D {
-  int n;    // 內部格數
-  int ng;   // 鬼格子層數（目前固定 2）
+  int n;    // Number of interior cells.
+  int ng;   // Ghost layers, currently fixed at 2.
   int m;    // n + 2*ng
   double xmin, xmax;
-  Array xc;  // 格心座標（含鬼格子），長度 m
-  Array dx;  // 格寬（含鬼格子），長度 m
+  Array xc;  // Cell centers including ghosts, length m.
+  Array dx;  // Cell widths including ghosts, length m.
 };
 
 struct Solver1D {
   Grid1D grid;
   Params1D par;
   int ncase;
-  Array U, U1, U2;  // 守恆變數，三組給 SSP-RK3
-  Array R;          // 殘差 dU/dt
-  Array W;          // 原始變數 (rho,u,p)
-  Array S;          // 限制後的斜率 (rho,u,p)
-  Array t;          // 每個 case 的時間
-  Array dt;         // 每個 case 這一步的時間步
-  long nsteps;      // 已推進的步數（每個 case 的最大值）
+  Array U, U1, U2;  // Conserved states; three arrays for SSP-RK3.
+  Array R;          // Residual dU/dt.
+  Array W;          // Primitive variables (rho,u,p).
+  Array S;          // Limited slopes of (rho,u,p).
+  Array t;          // Current time for each case.
+  Array dt;         // Current time step for each case.
+  long nsteps;      // Number of steps advanced, taking the maximum over cases.
 };
 
 Params1D params1d_default();
 
-// 建立均勻網格上的求解器。ncase >= 1。
+// Construct a uniform-grid solver; ncase >= 1.
 void solver1d_init(Solver1D* s, int n, double xmin, double xmax, int ncase,
                    const Params1D& par);
 
-// 寫入某個 case 某格的原始變數 (rho, u, p)（內部格 i = 0..n-1）。
+// Set primitive variables (rho,u,p) in interior cell i = 0..n-1 of a case.
 void solver1d_set_primitive(Solver1D* s, int c, int i, double rho, double u,
                             double p);
 
-// 在 x = x0 處設定 Riemann 初值：x < x0 用左態，否則用右態。
+// Set Riemann initial data at x0: left state for x < x0, right state otherwise.
 void solver1d_set_riemann(Solver1D* s, int c, double x0, double rhoL,
                           double uL, double pL, double rhoR, double uR,
                           double pR);
 
-// 推進到 tend（每個 case 各自推進，最後一步會縮短以剛好落在 tend）。
-// 回傳 0 表示成功；非 0 表示超過 maxsteps 或出現非物理狀態。
+// Advance each case to tend; shorten the final step to reach tend exactly.
+// Return 0 on success; nonzero if maxsteps is exceeded or a nonphysical state occurs.
 int solver1d_run(Solver1D* s, double tend, long maxsteps);
 
-// 讀出內部格的原始變數。
+// Read primitive variables in interior cells.
 void solver1d_get_primitive(const Solver1D* s, int c, int i, double* rho,
                             double* u, double* p);
 
-// 某個守恆量在內部格上的積分（sum U * dx），用來檢查守恆。
+// Integrate a conserved variable over interior cells (sum U * dx) to check conservation.
 double solver1d_integral(const Solver1D* s, int c, int var);
 
-// 殘差計算（對外公開，單元測試用）。U 必須已經套用過邊界條件。
+// Public residual calculation for unit tests. Boundary conditions must already be applied to U.
 void solver1d_apply_bc(const Solver1D* s, double* U);
 void solver1d_residual(const Solver1D* s, const double* U, double* R,
                        double* W, double* S);

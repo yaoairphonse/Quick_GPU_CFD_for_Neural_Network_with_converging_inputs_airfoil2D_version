@@ -10,7 +10,7 @@
 namespace cfd {
 
 // ---------------------------------------------------------------------------
-// 索引：U[(c*NVAR + v)*m + (i+ng)]，i 為內部索引（可為負，代表鬼格子）
+// Indexing: U[(c*NVAR + v)*m + (i+ng)]; interior index i may be negative for ghosts.
 // ---------------------------------------------------------------------------
 static inline size_t uidx(const Grid1D& g, int c, int v, int i) {
   return (static_cast<size_t>(c) * NVAR1D + v) * g.m + (i + g.ng);
@@ -22,13 +22,13 @@ Params1D params1d_default() {
   p.cfl = 0.5;
   p.flux = FLUX_HLLC;
   p.limiter = LIM_VENKAT;
-  // K 的取捨（2026-10-08 實測）：K=0.3 光滑解 L2 率只有 ~1.75（理論上限，
-  // 因 eps^2=(Kh)^3 使極值附近寬 ~h^0.5 的區域被壓低）；K=10 約 1.95 但 Sod 過衝約 0.5%。
+  // K tradeoff measured on 2026-10-08: K=0.3 gives a smooth-solution L2 rate of about 1.75,
+  // because eps^2=(Kh)^3 limits a region of width ~h^0.5 near extrema; K=10 gives ~1.95 but ~0.5% Sod overshoot.
   p.venkat_k = 5.0;
-  // AUSM+-up 的截斷 Mach 數 = 該問題的參考（自由流）Mach 數，不是調參數。
-  // 可壓縮跨音速/超音速問題 O(1) -> fa = 1。低速流才用小值，
-  // 但小 Mco 會讓壓力擴散項放大 1/fa 倍，強激波管會在第一步就出現負壓
-  // （2026-10-08 實測：Mco=0.1 時 Sod 與 Woodward-Colella 第 1 步即失敗）。
+  // The AUSM+-up cutoff is the reference/freestream Mach number, not a tuning parameter.
+  // Compressible transonic/supersonic cases use O(1), giving fa=1. Small values are for low speeds,
+  // but they amplify pressure diffusion by 1/fa and can produce negative pressure in strong shock tubes.
+  // Measurements on 2026-10-08: Mco=0.1 failed on the first step for Sod and Woodward-Colella.
   p.ausm_mco = 1.0;
   p.bc = BC_TRANSMISSIVE;
   p.dt_fixed = 0.0;
@@ -108,7 +108,7 @@ double solver1d_integral(const Solver1D* s, int c, int var) {
 }
 
 // ---------------------------------------------------------------------------
-// 邊界條件：填滿鬼格子。
+// Fill ghost cells according to the boundary conditions.
 // ---------------------------------------------------------------------------
 void solver1d_apply_bc(const Solver1D* s, double* U) {
   const Grid1D& g = s->grid;
@@ -121,7 +121,7 @@ void solver1d_apply_bc(const Solver1D* s, double* U) {
           q[g.n - 1 + k] = q[k - 1];
         }
       } else if (s->par.bc == BC_REFLECT) {
-        // 鏡像；動量（v == 1）變號
+        // Mirror the state and reverse momentum (v == 1).
         const double sgn = (v == 1) ? -1.0 : 1.0;
         for (int k = 1; k <= g.ng; ++k) {
           q[-k] = sgn * q[k - 1];
@@ -138,8 +138,8 @@ void solver1d_apply_bc(const Solver1D* s, double* U) {
 }
 
 // ---------------------------------------------------------------------------
-// 殘差：R_i = -(F_{i+1/2} - F_{i-1/2}) / dx_i
-// W: 原始變數 (rho,u,p) 工作陣列；S: 限制後斜率。兩者與 U 同形狀。
+// Residual: R_i = -(F_{i+1/2} - F_{i-1/2}) / dx_i.
+// W stores primitive variables (rho,u,p); S stores limited slopes. Both have the same shape as U.
 // ---------------------------------------------------------------------------
 void solver1d_residual(const Solver1D* s, const double* U, double* R,
                        double* W, double* S) {
@@ -159,7 +159,7 @@ void solver1d_residual(const Solver1D* s, const double* U, double* R,
     double* Su = S + base + m;
     double* Sp = S + base + 2 * m;
 
-    // 1) 守恆 -> 原始（含鬼格子）
+    // 1) Conserved to primitive variables, including ghosts.
     for (int j = 0; j < m; ++j) {
       const double r = Uc[j];
       const double mom = Uc[m + j];
@@ -169,7 +169,7 @@ void solver1d_residual(const Solver1D* s, const double* U, double* R,
       Wp[j] = (gm - 1.0) * (E - 0.5 * mom * mom / r);
     }
 
-    // 2) 斜率（-1 .. n 的格子，因為面通量需要兩側格子的斜率）
+    // 2) Slopes for cells -1..n, since each face requires both neighboring slopes.
     double* Wq[3] = {Wr, Wu, Wp};
     double* Sq[3] = {Sr, Su, Sp};
     for (int v = 0; v < 3; ++v) {
@@ -184,10 +184,10 @@ void solver1d_residual(const Solver1D* s, const double* U, double* R,
       }
     }
 
-    // 3) 面通量：面 i+1/2，i = -1 .. n-1（共 n+1 個面）
-    // 暫存各面通量；用一個小的堆疊外陣列太大，改成兩步：先算通量到 R 的暫存區。
-    // 這裡把 F_{i+1/2} 暫存在 Rc 的對應位置（j = i+ng），之後再做差分。
-    // 需要 3 個變數 -> Rc[v*m + j]。
+    // 3) Fluxes at faces i+1/2 for i = -1..n-1, giving n+1 faces.
+    // Temporarily store face fluxes in the R workspace instead of allocating another large array.
+    // Store F_{i+1/2} at the matching Rc index j = i+ng, then take differences.
+    // Three variables use Rc[v*m + j].
     for (int i = -1; i <= n - 1; ++i) {
       const int jl = i + ng, jr = i + 1 + ng;
       const double hl = 0.5 * g.dx[jl], hr = 0.5 * g.dx[jr];
@@ -205,10 +205,10 @@ void solver1d_residual(const Solver1D* s, const double* U, double* R,
       for (int v = 0; v < 3; ++v) Rc[v * m + jl] = F[v];
     }
 
-    // 4) 通量差分。F_{i+1/2} 存在 index (i+ng)；F_{i-1/2} 存在 (i-1+ng)。
-    //    先把右面通量取出再覆寫，所以由 i = 0 往 n-1 做時需要留意：
-    //    R_i 寫在 index (i+ng)，而 F_{i+1/2} 也在 (i+ng) -> 需要暫存。
-    //    做法：從左到右，保留上一個面通量 Fprev。
+    // 4) Flux differences: F_{i+1/2} is at i+ng, F_{i-1/2} at i-1+ng.
+    // Read the right-face flux before overwriting its location while marching from i=0 to n-1.
+    // R_i and F_{i+1/2} share index i+ng, so temporary storage is required.
+    // March left to right, retaining the previous face flux in Fprev.
     double Fprev[3] = {Rc[0 * m + (-1 + ng)], Rc[1 * m + (-1 + ng)],
                        Rc[2 * m + (-1 + ng)]};
     for (int i = 0; i < n; ++i) {
@@ -222,7 +222,7 @@ void solver1d_residual(const Solver1D* s, const double* U, double* R,
 }
 
 // ---------------------------------------------------------------------------
-// 時間步與 SSP-RK3
+// Time-step selection and SSP-RK3.
 // ---------------------------------------------------------------------------
 static void compute_dt(Solver1D* s, double tend) {
   const Grid1D& g = s->grid;
@@ -266,7 +266,7 @@ static bool has_bad_state(const Solver1D* s, const double* U) {
   return false;
 }
 
-// out = a*A + b*(B + dt*R)，對每個 case 用各自的 dt。
+// out = a*A + b*(B + dt*R), using the time step of each case.
 static void rk_combine(const Solver1D* s, double a, const double* A, double b,
                        const double* B, const double* R, double* out) {
   const Grid1D& g = s->grid;
@@ -311,10 +311,10 @@ int solver1d_run(Solver1D* s, double tend, long maxsteps) {
     solver1d_residual(s, U2, R, W, S);
     rk_combine(s, 1.0 / 3.0, U, 2.0 / 3.0, U2, R, U1);
 
-    // 把結果寫回 U（只複製內部格）
+    // Copy the result back to U, updating only interior cells.
     const Grid1D& g = s->grid;
     for (int c = 0; c < s->ncase; ++c) {
-      if (s->dt[c] <= 0.0) continue;  // 這個 case 已到 tend，不更新
+      if (s->dt[c] <= 0.0) continue;  // This case has reached tend; skip its update.
       for (int v = 0; v < NVAR1D; ++v) {
         const size_t base = (static_cast<size_t>(c) * NVAR1D + v) * g.m + g.ng;
         for (int i = 0; i < g.n; ++i) U[base + i] = U1[base + i];
@@ -329,7 +329,7 @@ int solver1d_run(Solver1D* s, double tend, long maxsteps) {
       return 2;
     }
   }
-  return 1;  // 超過 maxsteps
+  return 1;  // maxsteps exceeded.
 }
 
 }  // namespace cfd

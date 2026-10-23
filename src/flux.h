@@ -1,12 +1,12 @@
-// flux.h -- Euler 方程的數值通量（純函式，沒有狀態）。
+// flux.h -- Numerical Euler fluxes; pure functions with no state.
 //
-// 守恆變數（單位體積）：rho, rho*un, rho*ut, E，其中 E = p/(gamma-1) + rho*(un^2+ut^2)/2。
-//   un = 面法向速度，ut = 面切向速度（被動量，只被對流）。
-// 通量核心 flux_hllc_t / flux_ausmpup_t 吃左右兩側的 (rho, un, ut, p)，
-// 吐出界面通量 F[4] = (質量, 法向動量, 切向動量, 能量)。
-// 1D 版 flux_hllc / flux_ausmpup 就是 ut = 0 的特例（輸出只取 3 個分量），
-// 所以 1D 與 2D 只有一份通量程式碼；2D 沿一軸的問題必須與 1D 逐位元相同。
-// 全部無因次；左右兩側必須用同一組參考量。
+// Conserved variables per unit volume: rho, rho*un, rho*ut, E, with E = p/(gamma-1) + rho*(un^2+ut^2)/2.
+//   un is face-normal velocity; ut is tangential velocity, transported by advection.
+// flux_hllc_t / flux_ausmpup_t accept left/right states (rho, un, ut, p)
+// and return F[4] = (mass, normal momentum, tangential momentum, energy).
+// The 1D flux_hllc / flux_ausmpup wrappers use ut = 0 and return three components.
+// This keeps one flux implementation for 1D/2D; axis-aligned 2D cases must match 1D bit for bit.
+// All quantities are nondimensional; both states must use the same reference scales.
 #ifndef CFD_FLUX_H
 #define CFD_FLUX_H
 
@@ -15,7 +15,7 @@
 
 namespace cfd {
 
-// 精確的 Euler 通量 F(U)（含切向速度）。用來做一致性檢查（F(U,U) 必須等於它）。
+// Exact Euler flux F(U), including tangential velocity, for the consistency check F(U,U) = F(U).
 inline void flux_euler_exact_t(double rho, double un, double ut, double p,
                                double gamma, double F[4]) {
   const double E = p / (gamma - 1.0) + 0.5 * rho * un * un + 0.5 * rho * ut * ut;
@@ -35,9 +35,9 @@ inline void flux_euler_exact(double rho, double u, double p, double gamma,
 }
 
 // ---------------------------------------------------------------------------
-// HLLC（Toro, Spruce, Speares 1994）。波速估計用 Einfeldt（Roe 平均）。
-// 能精確解析接觸間斷與靜止的接觸；在強稀疏波附近比 AUSM 型更保守。
-// 切向速度是被動量：中間區域的切向速度等於各側的切向速度。
+// HLLC (Toro, Spruce, Speares 1994), with Einfeldt wave speeds from Roe averages.
+// Resolves contacts, including stationary contacts; more conservative near strong rarefactions than AUSM-type fluxes.
+// Tangential velocity is advected: each star region retains the tangential velocity of its side.
 // ---------------------------------------------------------------------------
 inline void flux_hllc_t(double rhoL, double uL, double vL, double pL,
                         double rhoR, double uR, double vR, double pR,
@@ -47,7 +47,7 @@ inline void flux_hllc_t(double rhoL, double uL, double vL, double pL,
   const double EL = pL / (gamma - 1.0) + 0.5 * rhoL * uL * uL + 0.5 * rhoL * vL * vL;
   const double ER = pR / (gamma - 1.0) + 0.5 * rhoR * uR * uR + 0.5 * rhoR * vR * vR;
 
-  // Roe 平均
+  // Roe averages.
   const double sL = std::sqrt(rhoL), sR = std::sqrt(rhoR);
   const double HL = (EL + pL) / rhoL, HR = (ER + pR) / rhoR;
   const double uT = (sL * uL + sR * uR) / (sL + sR);
@@ -72,7 +72,7 @@ inline void flux_hllc_t(double rhoL, double uL, double vL, double pL,
     return;
   }
 
-  // 接觸波速 S*
+  // Contact-wave speed S*.
   const double Sstar =
       (pR - pL + rhoL * uL * (SL - uL) - rhoR * uR * (SR - uR)) /
       (rhoL * (SL - uL) - rhoR * (SR - uR));
@@ -113,10 +113,10 @@ inline void flux_hllc(double rhoL, double uL, double pL, double rhoR, double uR,
 
 // ---------------------------------------------------------------------------
 // AUSM+-up（Liou 2006, JCP 214:137-170）。
-// 把界面通量拆成「對流（質量通量）」與「壓力」兩部分，各自用 Mach 數分裂。
-// 參數取論文建議值：Kp=0.25, Ku=0.75, sigma=1, beta=1/8, alpha 由 fa 決定。
-// Mco 是截斷 Mach 數 = 該問題的參考（自由流）Mach 數，不是調參數：
-// 可壓縮跨音速/超音速問題取 1；取小值會讓壓力擴散項放大 1/fa 倍。
+// Split the interface flux into convective mass-flux and pressure terms, each split by Mach number.
+// Recommended constants: Kp=0.25, Ku=0.75, sigma=1, beta=1/8; alpha depends on fa.
+// Mco is the cutoff Mach number, representing the reference/freestream Mach number rather than a tuning parameter.
+// Use 1 for compressible transonic/supersonic cases; a small value amplifies pressure diffusion by 1/fa.
 // ---------------------------------------------------------------------------
 namespace ausm_detail {
 inline double M1(double M, int s) { return 0.5 * (M + s * std::fabs(M)); }
@@ -150,17 +150,17 @@ inline void flux_ausmpup_t(double rhoL, double uL, double vL, double pL,
   const double fa = M0 * (2.0 - M0);
   const double alpha = 3.0 / 16.0 * (-4.0 + 5.0 * fa * fa);
 
-  // 界面 Mach 數（含壓力擴散項）
+  // Interface Mach number, including pressure diffusion.
   const double M12 = M4(ML, +1, beta) + M4(MR, -1, beta) -
                      (Kp / fa) * std::max(1.0 - sigma * Mbar2, 0.0) * (pR - pL) /
                          (rho12 * a12 * a12);
 
-  // 界面壓力（含速度擴散項）
+  // Interface pressure, including velocity diffusion.
   const double Pp = P5(ML, +1, alpha), Pm = P5(MR, -1, alpha);
   const double p12 = Pp * pL + Pm * pR -
                      Ku * Pp * Pm * (rhoL + rhoR) * (fa * a12) * (uR - uL);
 
-  // 質量通量，依 M12 的正負迎風
+  // Mass flux, upwinded according to the sign of M12.
   const double mdot = a12 * M12 * (M12 > 0.0 ? rhoL : rhoR);
   const double rho = (M12 > 0.0) ? rhoL : rhoR;
   const double u = (M12 > 0.0) ? uL : uR;

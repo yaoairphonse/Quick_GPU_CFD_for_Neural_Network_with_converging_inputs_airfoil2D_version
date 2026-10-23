@@ -1,18 +1,18 @@
-// euler2d_cli -- 2D Euler 求解器的命令列介面（給 Python 測試與繪圖用）。
+// euler2d_cli -- Command-line interface for Python tests and plots of the 2D Euler solver.
 //
-// 問題：
-//   vortex     Shu 的等熵渦（週期，精確解隨自由流平移），用來量測收斂階
-//   riemann_x  沿 x 的 Riemann 間斷（y 方向均勻），用來與 1D 求解器比對
-//   riemann_y  沿 y 的 Riemann 間斷（x 方向均勻）
-//   blast      圓形爆炸：半徑 r0 內用左態，外用右態
-//   body       均勻來流（--freestream）流過一個物體（--body），立即邊界法滑移壁；
-//              --wall-out 另存壁面上每個面中點的 x,y,nx,ny,rho,p 以及作用力
+// Problems:
+//   vortex     Periodic Shu isentropic vortex, translated by the freestream, for convergence studies.
+//   riemann_x  Riemann discontinuity along x, uniform in y, for comparison with the 1D solver.
+//   riemann_y  Riemann discontinuity along y, uniform in x.
+//   blast      Circular blast: left state inside radius r0, right state outside.
+//   body       Uniform --freestream past --body with an immersed-boundary slip wall.
+//              --wall-out saves x,y,nx,ny,rho,p and force at each wall-face midpoint.
 //
-// 例：
+// Example:
 //   euler2d_cli --problem vortex --nx 64 --ny 64 --xmin -8 --xmax 8 --ymin -8 --ymax 8
 //       --bcx periodic --bcy periodic --tend 4 --out vortex.csv
 //
-// 輸出 CSV 欄位：case,x,y,p,rho,u,v（x、y 是格心；與規劃書第 4 節的資料契約同序）。
+// CSV columns: case,x,y,p,rho,u,v; x,y are cell centers, following the data contract in Section 4 of the plan.
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -35,10 +35,10 @@ static void usage() {
       stderr,
       "usage: euler2d_cli --problem vortex|riemann_x|riemann_y|blast --out file.csv\n"
       "  --nx N --ny N [--xmin a --xmax b --ymin a --ymax b] [--tend T]\n"
-      "  [--riemann rhoL,uL,vL,pL,rhoR,uR,vR,pR]  (可重複；每次一個 case)\n"
-      "  [--x0 0.5]       間斷位置（riemann_x 用 x，riemann_y 用 y）\n"
-      "  [--xc0 0 --yc0 0 --r0 0.4]               爆炸或渦的中心與半徑\n"
-      "  [--beta 5 --u0 1 --v0 1]                  渦強度與自由流速度\n"
+      "  [--riemann rhoL,uL,vL,pL,rhoR,uR,vR,pR]  (repeatable; one case per occurrence)\n"
+      "  [--x0 0.5]       discontinuity location: x for riemann_x, y for riemann_y\n"
+      "  [--xc0 0 --yc0 0 --r0 0.4]               blast/vortex center and radius\n"
+      "  [--beta 5 --u0 1 --v0 1]                  vortex strength and freestream velocity\n"
       "  [--stretch-x uniform|geom:r|tanh:d|sinh:d] [--stretch-y ...]\n"
       "  [--bcx periodic|transmissive|reflect] [--bcy ...]\n"
       "  [--flux hllc|ausm] [--limiter first|none|minmod|venkat] [--k K]\n"
@@ -409,7 +409,7 @@ int main(int argc, char** argv) {
         const double x = g.xc[i + g.ng], y = g.yc[j + g.ng];
         double rho, u, v, p;
         if (problem == "body") {
-          continue;  // 之後統一以來流初始化
+          continue;  // Initialize all of these cells with the freestream below.
         } else if (problem == "vortex") {
           const double dx = x - xc0, dy = y - yc0, r2 = dx * dx + dy * dy;
           const double e = std::exp(0.5 * (1.0 - r2));

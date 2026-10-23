@@ -120,13 +120,13 @@ def index_page(out, summary):
                     f'<td>{c["mesh_setup_seconds"]:.4f}</td><td>{c["gpu"]["advance_cuda_event_seconds"]:.4f}</td>'
                     f'<td>{c["process_seconds"]:.4f}</td><td><a href="{label}/result.json">result</a> · '
                     f'<a href="{label}/output/">outputs</a></td></tr>')
-    text='''<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><title>Quick CFD airfoil result</title>
+    text='''<!doctype html><html lang="en"><meta charset="utf-8"><title>Quick CFD airfoil result</title>
 <style>body{font:16px/1.8 system-ui;max-width:1100px;margin:30px auto;padding:20px}table{border-collapse:collapse;width:100%}td,th{padding:8px;border-bottom:1px solid #ccc;text-align:left}img{width:100%}</style>'''
-    text+=f'<h1>{html.escape(summary["geometry"]["name"])}：LF1／LF2</h1><p>每個網格獨立均勻t=0開始；mechanical viscous，κ=0。x–y平面，Mz逆時針為正。粗網格係數用於定性與版本比較。</p>'
-    text+='<table><tr><th>profile</th><th>流體CV</th><th>status</th><th>mesh(s)</th><th>GPU event(s)</th><th>process(s)</th><th>資料</th></tr>'+''.join(rows)+'</table>'
-    text+='<p>完整pipeline時間含輪廓處理、程序與Python輸出：'+format(summary['pipeline_seconds'],'.4f')+'秒。GPU event不是kernel busy sum；CPU backend此欄為0。完整計時與設定見<a href="pipeline.json">pipeline.json</a>。</p>'
+    text+=f'<h1>{html.escape(summary["geometry"]["name"])}: LF1 / LF2</h1><p>Each grid starts independently from uniform freestream at t=0. Mechanical viscous model with kappa=0. Coordinates lie in the x-y plane; positive Mz is counterclockwise. Coarse-grid coefficients support qualitative studies and version comparisons.</p>'
+    text+='<table><tr><th>profile</th><th>Fluid CVs</th><th>status</th><th>mesh(s)</th><th>GPU event(s)</th><th>process(s)</th><th>Data</th></tr>'+''.join(rows)+'</table>'
+    text+='<p>Total pipeline time, including geometry processing, solver processes, and Python exports: '+format(summary['pipeline_seconds'],'.4f')+' seconds. GPU event time is elapsed stream time, including possible dispatch gaps; it is zero for CPU runs. Full timing and configuration: <a href="pipeline.json">pipeline.json</a>。</p>'
     for c in summary['cases']:
-        text+=f'<h2>{c["profile"]} 網格近景</h2><img src="{c["profile"]}/output/mesh.svg"><p>顯示背景member矩形與原始翼型；cut-cell積分使用真實面積及壁段。</p>'
+        text+=f'<h2>{c["profile"]} mesh close-up</h2><img src="{c["profile"]}/output/mesh.svg"><p>Background member rectangles and the original airfoil outline are shown. Cut-cell integration uses actual fluid areas and wall fragments.</p>'
     (out/'index.html').write_text(text+'</html>')
 
 

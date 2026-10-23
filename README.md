@@ -1,19 +1,18 @@
 # quick_CFD_for_NNLCI_airfoil_opt_case
 
-**先開 [GUIDE.html](GUIDE.html)**：完整教學、方程式、演算法、網格預設、設定檔編輯器與輸出定義。
+Start with [GUIDE.html](GUIDE.html) for the equations, algorithms, mesh presets, offline configuration editor, and output definitions. Download or clone the repository and open the guide locally in a browser.
 
-獨立 pipeline：**GXXX 點座標 CSV → 輪廓整理 → LF1／LF2 AMR cut-cell 製網 → GPU solver → SI 流場／壁面／載荷**。
-此資料夾包含原始碼、獨立 CMake、Python 入口、預設設定與十份範例；不需引用父專案程式或幾何。
+A standalone pipeline: **GXXX point CSV → contour preparation → LF1/LF2 AMR cut-cell meshes → CPU/CUDA solver → SI fields, wall data, and aerodynamic loads**. Source code, standalone CMake configuration, the Python entry point, defaults, and ten example airfoils are included. No parent-project code or geometry is required.
 
-## 下次開發優先（2026-10-20）
+## Computed flow example
 
-使用者指定先進行 **低Mach preconditioning**，讓整體求解器與此pipeline支援低速；熱傳排在後續。
-目前僅記錄，尚未有preconditioning開關或實作；詳見 [NEXT_SESSION.md](NEXT_SESSION.md)。
+![G0001 LF2: computed Mach number, pressure, velocity magnitude, and temperature](docs/assets/G0001_LF2_flow.png)
 
-## 快速開始
+Saved G0001 result: M∞=1.65, angle of attack 1.5°, p∞=18,754 Pa, T∞=216.65 K, chord 1 m; SA-neg with Sutherland viscosity and a no-slip wall. LF2 has 9,533 fluid control volumes and passed the original steady criteria. Colors show control-volume averages on background member rectangles, with the solid masked. Pressure and temperature changes follow compressible mechanical flow; thermal conductivity is zero. See the [Guide flow gallery](GUIDE.html#flows) for LF1/LF2 fields, surface Cp, and interpretation. Plot data and provenance are retained in [docs/data](docs/data).
 
-需要 Python 3.9+、NumPy、CMake 3.18+、C++17；GPU 路徑另需 CUDA Toolkit 與相容 NVIDIA GPU。
-目前預設 CUDA architecture=89（RTX4090）；其他 GPU 在 build 時明確指定架構。
+## Quick start
+
+Requirements: Python 3.9+, NumPy, CMake 3.18+, and C++17. GPU execution additionally requires the CUDA Toolkit and a compatible NVIDIA GPU. The default CUDA architecture is 89 for RTX 4090; specify the correct architecture when building for another GPU.
 
 ```sh
 cd quick_CFD_for_NNLCI_airfoil_opt_case
@@ -22,67 +21,62 @@ python3 quick_cfd.py build
 python3 quick_cfd.py run --points examples/G0001_airfoil_points.csv --out runs/my_airfoil
 ```
 
-一次輸入，預設跑 **LF1 與 LF2**。輸出資料夾必須是新的或空的，避免覆寫既有算例。
-每級各自均勻遠場 t=0 開始，沒有 LF1 → LF2 暖啟動。完成後開啟 `runs/my_airfoil/index.html`。
+Each input runs **both LF1 and LF2** by default. The output directory must be new or empty. Both grids start independently from uniform freestream at t=0; there is no LF1-to-LF2 warm start. Open `runs/my_airfoil/index.html` after the run.
 
 ```sh
-# 只製作兩級網格
+# Generate both meshes only
 python3 quick_cfd.py mesh --points examples/G0001_airfoil_points.csv --out runs/mesh_only
-# 複製完整設定，再修改 JSON
+# Save the complete defaults, then edit the JSON
 python3 quick_cfd.py init-config --out my_config.json
 python3 quick_cfd.py run --points examples/G0002_airfoil_points.csv --config my_config.json
-# 物理遠場、laminar、常數黏度、局部輸出
+# Physical freestream, laminar flow, constant viscosity, and a selected output region
 python3 quick_cfd.py run --points examples/G0001_airfoil_points.csv --mach 1.35 --aoa 5 --pressure 18754 --temperature 216.65 --turbulence none --viscosity constant --region -0.5 2 -0.5 0.5 --fields x y p mach
-# 只跑 LF2，或明確計算到指定 t*（不宣稱穩態）
+# Run LF2 to a specified nondimensional time without claiming steady state
 python3 quick_cfd.py run --points examples/G0001_airfoil_points.csv --levels LF2 --mode time --stop-time 1
-# 重新輸出，不跑 solver；範圍是 x/c,y/c，輸出欄位仍為 SI
+# Re-export without running the solver; the region uses x/c,y/c, while fields use SI
 python3 quick_cfd.py export --run runs/my_airfoil --fields x y p mach --region -0.5 2 -0.5 0.5 --formats npz
-# CPU 可獨立建置（無需 CUDA）
+# Build and run on CPU without CUDA
 python3 quick_cfd.py build --cpu
 python3 quick_cfd.py run --backend cpu --points examples/G0001_airfoil_points.csv --mode time --stop-time 0.01
 ```
 
-## 預設值
+## Defaults
 
-|設定|LF1|LF2|
+| Setting | LF1 | LF2 |
 |---|---|---|
-|典型流體控制體|4668–4725|9433–9533|
-|背景格數|42×40|42×40|
-|最高加密層數|5|6|
-|壁面 h/c|1/64|1/128|
-|壁面 buffer|4|4|
+| Typical fluid control volumes | 4668–4725 | 9433–9533 |
+| Background cells | 42×40 | 42×40 |
+| Maximum refinement level | 5 | 6 |
+| Wall h/c | 1/64 | 1/128 |
+| Wall buffer | 4 | 4 |
 
-實際格數隨外型改變；這兩個名稱代表固定規則，不是強制指定格數。完整 boxes 與參數在 [config/default.json](config/default.json)。
+Counts depend on geometry. LF1/LF2 identify fixed refinement rules, rather than prescribed cell counts. Complete boxes and parameters are in [config/default.json](config/default.json).
 
-共同：M∞=1.65、AOA=1.5°、p∞=18754 Pa、T∞=216.65 K、chord=1 m；域 [-7,14]×[-10,10]（弦長單位）。
-SA-neg、Sutherland、HLLC、一階 FV、SSP-RK3、CFL=.15、viscous/SA CFL=.1、GPU fused/Graph/batch32。
-四面 characteristic farfield；可改 pressure-outlet／transmissive。壁面固定 no-slip；κ=0。
+Common settings: M∞=1.65, angle of attack 1.5°, p∞=18,754 Pa, T∞=216.65 K, chord 1 m; domain [-7,14]×[-10,10] in chord units. The defaults use SA-neg, Sutherland viscosity, HLLC, first-order finite volumes, SSP-RK3, CFL=.15, viscous/SA CFL=.1, and fused GPU kernels with CUDA Graph batches of 32 sequential trials. All four outer sides use characteristic farfield conditions, with pressure-outlet and transmissive alternatives. The wall is stationary and no-slip; κ=0.
 
-## 設定與輸出
+## Configuration and output
 
-- `freestream`：Mach、AOA、靜態 p/T、chord、γ、R。輸入點 x,y 為 x/c,y/c，不會擅自平移或縮放。
-- `mesh`：bounds、base_shape、wall_buffer、max_cells、LF1/LF2 levels 與 boxes。
-- `physics`：turbulence=`none|sa-neg`、viscosity=`constant|sutherland`、μ與Sutherland係數、SA遠場量。
-- `boundaries`：xmin/xmax/ymin/ymax 各自設定；pressure-outlet 的靜態壓力用 Pa，supersonic outflow 不強制出口壓力。
-- `solver`：GPU/CPU、hllc/ausm、reference/fused、CFL或固定dt（秒）、時間／預算／穩態條件、Mz參考點。
-- `output`：x、y、p、rho、u、v、mach、temperature；CSV／未壓縮NPZ；範圍選擇、nearest-cell probes、表面patch、全翼型loads。
+- `freestream`: Mach, angle of attack, static p/T, chord, γ, and R. Input x,y represent x/c,y/c and are preserved without translation or scaling.
+- `mesh`: bounds, base_shape, wall_buffer, max_cells, and LF1/LF2 refinement levels/boxes.
+- `physics`: turbulence=`none|sa-neg`, viscosity=`constant|sutherland`, viscosity constants, and the SA freestream value.
+- `boundaries`: separate xmin/xmax/ymin/ymax conditions. Pressure-outlet static pressure uses Pa; supersonic outflow does not impose outlet pressure.
+- `solver`: CPU/CUDA, hllc/ausm, reference/fused SA layouts, CFL or fixed dt in seconds, time/budget/steady criteria, and the moment reference.
+- `output`: x,y,p,rho,u,v,mach,temperature; CSV/uncompressed NPZ; regions, nearest-cell probes, surface patches, and whole-airfoil loads.
 
-每級資料：`internal/`保存無因次NPY與幾何；`output/`保存選擇的SI資料；`result.json`、`solver.log`、`config.resolved.json`與`command.json`保存來源與停止原因。
+Each grid stores complete nondimensional arrays and geometry under `internal/`, with selected SI exports under `output/`. `result.json`, `solver.log`, `config.resolved.json`, and `command.json` record provenance and stopping reasons.
 
-`output/aerodynamics.csv/.npz`以每案一列輸出可選的drag、lift、fx、fy、viscous_force_x/y、viscous_drag/lift、moment_z、CL/CD/CM_z等；使用`--load-fields`或`output.load_fields`選欄位。
+`output/aerodynamics.csv/.npz` contains one row per case with selectable drag, lift, fx, fy, viscous forces, moments, and CL/CD/CM_z. Choose columns with `--load-fields` or `output.load_fields`. `output/loads.json` retains pressure, viscous, and total force/moment components and patch contributions.
 
-`output/loads.json`含 pressure／viscous／total 各自的 force_x、force_y、drag、lift、moment_z、CD、CL、CM_z，以及各patch分量。
-**x–y 平面，Mz 逆時針正，預設參考點 (.25c,0)。力單位 N/m span，力矩 N m/m span。**
-壁面壓力／密度／溫度取 owner cell；壁面速度=0。`temperature_owner_K`不是指定的壁溫。
+**Coordinates lie in the x–y plane; positive Mz is counterclockwise. The default reference is (.25c,0). Forces use N/m span and moments use N m/m span.** Wall pressure, density, and temperature are owner-cell samples; stationary no-slip wall velocity is zero. `temperature_owner_K` is not a prescribed wall temperature.
 
-退出碼：0=所要求的mesh/time任務完成或steady達標；2=輸入／建置／數值／輸出錯誤；3=steady未達標（仍保存結果）。
-固定dt會取代自動convective／viscous／SA限制，不會自動把過大的dt縮成穩定值。
+Exit codes: 0 for a completed mesh/time task or converged steady run; 2 for input/build/numerical/output errors; 3 for a steady run that has not met its criteria, with results saved. A fixed dt replaces automatic convective/viscous/SA limits; oversized values are not silently reduced to a stable choice.
 
-## 範圍與來源
+## Current scope and development
 
-這是快速、粗網格定性 aerodynamic 工具；mechanical SA-neg／laminar、κ=0，尚無Fourier、壁面模型或低Mach預條件。
-溫度由總能量求得；尚未認證高Re邊界層／實驗CD。完整方法與限制見GUIDE。搬移資料夾後build會保留並改名舊位置的build目錄，再重新配置。
-`CORE_PROVENANCE.json`記錄抽取時的原核心hash；父專案維持原樣。此獨立版修改介面與輸出，沒有改核心數值離散。
+The published pipeline is **2D**. It provides mechanical SA-neg/laminar flow with κ=0, without Fourier heat fluxes, wall functions, or an exposed low-Mach preconditioner. It is intended for fast, coarse-grid qualitative aerodynamic data. Temperature comes from total energy and the equation of state; high-Re boundary-layer resolution and experimental drag accuracy are not certified. See [GUIDE.html](GUIDE.html) for the methods and limitations.
 
-已交付的完整範例：[runs/G0001_default/index.html](runs/G0001_default/index.html)。
-版本比對：[validation/ten_short_checks.json](validation/ten_short_checks.json)；完整稽核與計時見 [validation/summary.json](validation/summary.json)。
+Local development of a viscous SA 3D sphere solver and low-Mach preconditioning is separate from this documentation release. The requested Mach 0.2 NACA4412 and 3D sphere work will be documented with verified results when ready. See [NEXT_SESSION.md](NEXT_SESSION.md). Heat transfer follows later.
+
+After moving the folder, the build command preserves an old-location build under a renamed directory before reconfiguring. [CORE_PROVENANCE.json](CORE_PROVENANCE.json) retains the original extraction hashes and current hashes after English comment translation. The published numerical discretization is unchanged by this translation.
+
+Historical comparisons: [20 short-case checks](validation/ten_short_checks.json) and [full audit/timing summary](validation/summary.json). Large simulation outputs, archived references, build products, and the user's local Chinese originals are excluded from Git.

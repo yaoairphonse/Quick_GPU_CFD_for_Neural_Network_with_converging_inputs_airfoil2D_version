@@ -1,11 +1,11 @@
-// euler1d_cli -- 1D Euler 求解器的命令列介面（給 Python 測試與繪圖用）。
+// euler1d_cli -- Command-line interface for Python tests and plots of the 1D Euler solver.
 //
-// 例：
+// Example:
 //   euler1d_cli --problem riemann --n 400 --tend 0.2
 //       --riemann 1,0,1,0.125,0,0.1 --flux hllc --limiter venkat --out sod.csv
 //   euler1d_cli --problem simple_wave --n 200 --tend 0.2 --amp 0.1 --out w.csv
 //
-// 輸出 CSV 欄位：case,x,rho,u,p（全部無因次）。
+// CSV columns: case,x,rho,u,p; all quantities are nondimensional.
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -20,7 +20,7 @@ using namespace cfd;
 static void usage() {
   std::fprintf(stderr,
                "usage: euler1d_cli --problem riemann|simple_wave --n N --tend T\n"
-               "  [--riemann rhoL,uL,pL,rhoR,uR,pR]  (可重複；每次一個 case)\n"
+               "  [--riemann rhoL,uL,pL,rhoR,uR,pR]  (repeatable; one case per occurrence)\n"
                "  [--x0 0.5] [--xmin 0] [--xmax 1] [--amp A]\n"
                "  [--flux hllc|ausm] [--limiter first|none|minmod|venkat] [--k K]\n"
                "  [--cfl C] [--gamma G] [--bc periodic|transmissive]\n"
@@ -88,7 +88,7 @@ int main(int argc, char** argv) {
   int ncase = 1;
   if (problem == "riemann") {
     if (riem.empty()) {
-      // 預設 Sod
+      // Default Sod problem.
       const double sod[6] = {1.0, 0.0, 1.0, 0.125, 0.0, 0.1};
       riem.push_back(std::vector<double>(sod, sod + 6));
     }
@@ -108,8 +108,8 @@ int main(int argc, char** argv) {
       solver1d_set_riemann(&s, c, x0, riem[c][0], riem[c][1], riem[c][2],
                            riem[c][3], riem[c][4], riem[c][5]);
   } else {
-    // 右行簡單波的初值：u0 = A sin(2 pi x)，a0 = 1，rho0 = 1，p0 = rho0 a0^2 / gamma，
-    // 等熵且左行 Riemann 不變量為常數：a = a0 + (gamma-1)/2 * u。
+    // Initial right-running simple wave: u0 = A sin(2 pi x), a0 = 1, rho0 = 1, p0 = rho0 a0^2 / gamma.
+    // Isentropic with a constant left-running Riemann invariant: a = a0 + (gamma-1)/2 * u.
     const double gm = par.gamma;
     const double a0 = 1.0, rho0 = 1.0, p0 = rho0 * a0 * a0 / gm;
     for (int i = 0; i < n; ++i) {

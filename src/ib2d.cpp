@@ -1,4 +1,4 @@
-// ib2d.cpp -- 立即邊界法（鬼格子加影像點）的建立與壁面力。見 euler2d.h 的 IB2D。
+// ib2d.cpp -- Immersed-boundary geometry, image-point ghosts, and wall forces; see IB2D in euler2d.h.
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -9,7 +9,7 @@
 
 namespace cfd {
 
-// 在內部格心中找 x 所在區間 [xc[i0], xc[i0+1]]（i0 為內部索引 0..n-2；超出就夾住）。
+// Find the interior-center interval [xc[i0],xc[i0+1]] containing x; clamp i0 to 0..n-2.
 static int find_cell(const Array& xc, int ng, int n, double x) {
   int lo = 0, hi = n - 1;
   if (x <= xc[ng]) return 0;
@@ -21,13 +21,13 @@ static int find_cell(const Array& xc, int ng, int n, double x) {
   return lo;
 }
 
-// 在 (x,y) 建立流體格內插模板（最多 IB_NS 格），權重和為 1。
-//   模式 0：包圍點的 4 格全是流體 -> 雙線性。
-//   模式 1：否則取周圍 4x4（不夠再 6x6）的流體格，做加權最小平方線性擬合，
-//           權重對「線性場」精確（二階）；用到的格集合只由幾何決定，不依索引順序，
-//           所以對稱的配置得到對稱的權重。
-//   模式 2：流體格太少或共線 -> 反距離平方加權（只保證常數場）。
-// 回傳模式；-1 = 找不到任何流體格。idx 不用的欄位權重為 0。
+// Build a fluid interpolation stencil at (x,y), with at most IB_NS cells and weights summing to 1.
+//   Mode 0: all four enclosing cells are fluid; use bilinear interpolation.
+//   Mode 1: otherwise fit a weighted least-squares linear field using nearby 4x4 or 6x6 fluid cells.
+//           Weights reproduce linear fields (second order); geometry alone determines the stencil,
+//           so symmetric configurations receive symmetric weights regardless of index ordering.
+//   Mode 2: too few or collinear cells; inverse-distance-squared weights reproduce constants only.
+// Return the mode, or -1 if no fluid cell exists. Unused idx entries have zero weight.
 static int stencil_at(const Grid2D& g, const double* fluid, double x, double y,
                       long idx[IB_NS], double w[IB_NS]) {
   for (int m = 0; m < IB_NS; ++m) { idx[m] = 0; w[m] = 0.0; }
@@ -80,8 +80,8 @@ static int stencil_at(const Grid2D& g, const double* fluid, double x, double y,
                        M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0]) +
                        M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0]);
     const double scale = M[0][0] * M[1][1] * M[2][2];
-    if (!(std::fabs(det) > 1e-9 * scale)) continue;  // 共線，擴大
-    // 解 M z = e1（Cramer 的第一欄餘因子）
+    if (!(std::fabs(det) > 1e-9 * scale)) continue;  // Collinear stencil; expand the neighborhood.
+    // Solve M z = e1 using the first-column cofactors in Cramer's rule.
     const double z0 = (M[1][1] * M[2][2] - M[1][2] * M[2][1]) / det;
     const double z1 = -(M[1][0] * M[2][2] - M[1][2] * M[2][0]) / det;
     const double z2 = (M[1][0] * M[2][1] - M[1][1] * M[2][0]) / det;
@@ -110,7 +110,7 @@ static int stencil_at(const Grid2D& g, const double* fluid, double x, double y,
   return 2;
 }
 
-// 壁面法向（指向流體）：用最近線段的法向，選擇「沿它走一小步會離開多邊形」的方向。
+// Fluid-directed wall normal: use the nearest segment and choose the direction that steps outside the polygon.
 static void segment_normal_to_fluid(const double* px, const double* py, int n, int seg,
                                     double cx, double cy, double eps, double* nx, double* ny) {
   const int a = seg, b = (seg + 1) % n;
@@ -130,7 +130,7 @@ int ib2d_build_polygon(const Solver2D* s, const double* px, const double* py, in
   const size_t cells = static_cast<size_t>(g.mx) * g.my;
   const int nx = g.nx, ny = g.ny;
 
-  // 1) SDF 與分類（只在內部格）
+  // 1) SDF and classification in interior cells.
   std::vector<double> phi(static_cast<size_t>(nx) * ny);
   std::vector<unsigned char> type(static_cast<size_t>(nx) * ny);
   for (int j = 0; j < ny; ++j)
@@ -142,7 +142,7 @@ int ib2d_build_polygon(const Solver2D* s, const double* px, const double* py, in
   ib->nghost = nghost;
   ib->nfallback = 0;
   ib->fluid.allocate(cells);
-  for (size_t k = 0; k < cells; ++k) ib->fluid[k] = 1.0;  // 計算域邊界鬼格子視為流體
+  for (size_t k = 0; k < cells; ++k) ib->fluid[k] = 1.0;  // Domain-boundary ghosts count as fluid.
   for (int j = 0; j < ny; ++j)
     for (int i = 0; i < nx; ++i)
       if (type[static_cast<size_t>(j) * nx + i] != CELL_FLUID)
@@ -164,7 +164,7 @@ int ib2d_build_polygon(const Solver2D* s, const double* px, const double* py, in
 
   ib->dprobe = hmin;
 
-  // 2) 鬼格子：壁面最近點、法向、影像點、內插模板
+  // 2) Ghosts: nearest wall point, normal, image point, and interpolation stencil.
   int k = 0;
   for (int j = 0; j < ny; ++j)
     for (int i = 0; i < nx; ++i) {
@@ -178,18 +178,18 @@ int ib2d_build_polygon(const Solver2D* s, const double* px, const double* py, in
       const double stx = px[sb] - px[seg], sty = py[sb] - py[seg];
       const double tpar = ((cx - px[seg]) * stx + (cy - py[seg]) * sty) / (stx * stx + sty * sty);
       if (tpar > 1e-9 && tpar < 1.0 - 1e-9) {
-        // 最近點在線段內部：法向就是面的法向（d 很小時比 (c-x)/d 準確；兩者在非平手時相同）。
-        // 注意：恰好落在頂點分角線上的點，兩個相鄰面距離相同（平手），法向會差 pi/M。
+        // For an interior segment projection, use its face normal; this is more accurate than (c-x)/d for small d.
+        // A point exactly on a vertex-angle bisector ties the two nearest faces; their normals differ by pi/M.
         segment_normal_to_fluid(px, py, n, seg, cx, cy, 1e-7 * hmin, &nxn, &nyn);
       } else if (d > 1e-10 * hmin) {
-        nxn = (cx - x) / d;  // 鬼格子在固體內：指向壁面 = 指向流體
+        nxn = (cx - x) / d;  // The ghost is inside solid: the wall direction points into fluid.
         nyn = (cy - y) / d;
-        if (ph > 0.0) { nxn = -nxn; nyn = -nyn; }  // 防呆（ghost 的 phi 應 <= 0）
+        if (ph > 0.0) { nxn = -nxn; nyn = -nyn; }  // Guard against an unexpected positive ghost phi.
       } else {
         segment_normal_to_fluid(px, py, n, seg, cx, cy, 1e-7 * hmin, &nxn, &nyn);
         d = 0.0;
       }
-      const double ix = x + 2.0 * d * nxn, iy = y + 2.0 * d * nyn;  // 影像點
+      const double ix = x + 2.0 * d * nxn, iy = y + 2.0 * d * nyn;  // Image point.
       long idx[IB_NS];
       double w[IB_NS];
       const int mode = stencil_at(g, ib->fluid.data(), ix, iy, idx, w);
@@ -231,7 +231,7 @@ static double hmin_of(const Grid2D& g) {
   return h;
 }
 
-// 在 (x,y) 內插 密度與壓力
+// Interpolate density and pressure at (x,y).
 static int rho_p_at(const Solver2D* s, int c, double x, double y, double* rho, double* p) {
   const Grid2D& g = s->grid;
   const size_t cells = static_cast<size_t>(g.mx) * g.my;
@@ -259,7 +259,7 @@ int ib2d_wall_state(const Solver2D* s, int c, double wx, double wy, double nx, d
   double r1, p1, r2, p2;
   if (rho_p_at(s, c, wx + 1.5 * h * nx, wy + 1.5 * h * ny, &r1, &p1)) return 1;
   if (rho_p_at(s, c, wx + 2.5 * h * nx, wy + 2.5 * h * ny, &r2, &p2)) return 1;
-  *rho = r1 - 1.5 * (r2 - r1);  // 斜率 (2-1)/h，往回 1.5h
+  *rho = r1 - 1.5 * (r2 - r1);  // Slope (2-1)/h, extrapolated back by 1.5h.
   *p = p1 - 1.5 * (p2 - p1);
   return 0;
 }

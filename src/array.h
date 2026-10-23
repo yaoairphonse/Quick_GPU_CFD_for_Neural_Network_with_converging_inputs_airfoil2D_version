@@ -1,5 +1,5 @@
-// array.h -- 唯一允許的「小類別」：只負責申請與釋放一塊 double 陣列。
-// 之後上 GPU 時，只在這裡加 `acc enter data` / `acc exit data`，其餘程式不用動。
+// array.h -- The only small utility class: allocate and release a double array.
+// GPU data directives (acc enter data / acc exit data) can be added here centrally.
 #ifndef CFD_ARRAY_H
 #define CFD_ARRAY_H
 
@@ -32,7 +32,7 @@ class Array {
     return *this;
   }
 
-  // 配置並清零。失敗就直接中止（不使用例外）。
+  // Allocate and zero the array. Abort on failure; exceptions are not used.
   void allocate(size_t n) {
     release();
     p_ = static_cast<double*>(std::calloc(n > 0 ? n : 1, sizeof(double)));

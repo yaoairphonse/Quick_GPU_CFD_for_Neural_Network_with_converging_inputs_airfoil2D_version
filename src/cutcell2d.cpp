@@ -1,12 +1,12 @@
-// cutcell2d.cpp -- 2D Cartesian cut-cell（嵌入邊界）有限體積：幾何、守恆壁面通量、SRD。
+// cutcell2d.cpp -- 2D Cartesian embedded-boundary finite volumes: geometry, conservative wall flux, and SRD.
 //
-// 設計（參考 Colella et al. 2006 的壁面通量，Berger & Giuliani 2020 的 SRD；見手冊『12 文獻』）：
-//   * 每個格子只算流體部分：面積 V、形心、四個格面的開口長度與開口形心、壁面向量與壁面形心。
-//   * 格面通量照舊（HLLC/AUSM+-up），再乘以開口長度；壁面通量只剩壓力 (0, p*n, 0)，
-//     所以壁面的質量與能量通量精確為零，守恆在代數上成立。
-//   * 小格子的顯式穩定性問題由 SRD 處理（每個 RK 階段後）。
-// 幾何用『邊界積分』：流體區域的邊界 = 格面開口 + 壁面線段，面積與形心由它們算出，
-// 因此封閉性（開口向量和 + 壁面向量 = 0）在建構時就成立。
+// Design follows Colella et al. (2006) for wall fluxes and Berger & Giuliani (2020) for SRD; see manual references.
+//   * Integrate only fluid: area V, centroid, four face apertures/centroids, and wall vector/centroid.
+//   * Multiply HLLC/AUSM+-up face fluxes by aperture length; wall flux is pressure only, (0,p*n,0),
+//     so wall mass/energy fluxes are exactly zero and conservation holds algebraically.
+//   * SRD addresses explicit small-cell stability after each RK stage.
+// Geometry uses boundary integrals over face apertures and wall segments to compute area and centroid.
+// Thus aperture vectors plus wall vectors form a closed boundary by construction.
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -24,7 +24,7 @@ namespace cfd {
 
 namespace {
 
-// 多邊形邊 (a->b) 對垂直線 x=c 的交點 y（半開慣例：(ax>=c) != (bx>=c) 才算交點）
+// Intersect polygon edge a->b with x=c; use half-open convention (ax>=c)!=(bx>=c).
 inline bool cross_vline(double ax, double ay, double bx, double by, double c, double* y) {
   if ((ax >= c) == (bx >= c)) return false;
   *y = ay + (c - ax) * (by - ay) / (bx - ax);
@@ -44,8 +44,8 @@ bool on_aligned_wall(const double* px,const double* py,int n,bool vertical,doubl
   return false;
 }
 
-// 一條垂直（或水平）線段上的流體開口：回傳總長與形心（沿線座標）。
-// vertical = true：線在 x=c，從 lo 到 hi（y）。
+// Return total fluid aperture length and its centroid along a vertical or horizontal segment.
+// vertical=true: x=c and y ranges from lo to hi.
 void aperture_line(const double* px, const double* py, int n, bool vertical, double c,
                    double lo, double hi, double* len, double* cen) {
   std::vector<double> t;
@@ -75,7 +75,7 @@ void aperture_line(const double* px, const double* py, int n, bool vertical, dou
   *cen = (L > 0.0) ? M / L : 0.5 * (lo + hi);
 }
 
-// Liang-Barsky：線段 P->Q 與矩形 [x0,x1]x[y0,y1] 的交（半開慣例同上：x>=x0 且 x<x1…）
+// Liang-Barsky intersection of P->Q with [x0,x1]x[y0,y1], using the same half-open convention.
 bool clip_segment(double* x1, double* y1, double* x2, double* y2, double xa, double xb,
                   double ya, double yb) {
   double t0 = 0.0, t1 = 1.0;
@@ -101,7 +101,7 @@ bool clip_segment(double* x1, double* y1, double* x2, double* y2, double xa, dou
   return (t1 - t0) > 1e-14;
 }
 
-// 多邊形邊指向流體的單位法向（沿法向走一小步離開多邊形）
+// Fluid-directed unit normal of a polygon edge; stepping along it leaves the polygon.
 void edge_normal_to_fluid(const double* px, const double* py, int n, int a, double mx, double my,
                           double eps, double* nx, double* ny) {
   const int b = (a + 1) % n;
@@ -287,7 +287,7 @@ int cut2d_build_polygon(const Solver2D* s, const double* px, const double* py, i
   cut->nbrcount.allocate(cells); cut->smallpos.allocate(cells);
   for (size_t k = 0; k < cells; ++k) { cut->smallpos[k] = -1.0; cut->nbrcount[k] = 1.0; }
 
-  // 1) 計算域（含鬼格子）預設為完整流體格
+  // 1) Initialize all domain cells, including ghosts, as full fluid.
   for (int j = -ng; j < ny + ng; ++j)
     for (int i = -ng; i < nx + ng; ++i) {
       const size_t k = static_cast<size_t>(j + ng) * mx + (i + ng);
@@ -305,13 +305,13 @@ int cut2d_build_polygon(const Solver2D* s, const double* px, const double* py, i
     pminy = std::fmin(pminy, py[q]); pmaxy = std::fmax(pmaxy, py[q]);
   }
 
-  // 2) 格面開口（全域面各算一次）
+  // 2) Compute each global face aperture once.
   for (int j = 0; j < ny; ++j)
     for (int i = 0; i <= nx; ++i) {
       const size_t f = static_cast<size_t>(j) * (nx + 1) + i;
-      // Polygon bounding box 外必為完整流體面。直接填入與下方
-      // full-aperture normalization 完全相同的精確格寬/格心，避免大網格
-      // 對每個遠場面仍掃描所有 polygon edges。
+      // Faces outside the polygon bounding box are fully open. Fill the same exact widths/centers
+      // used by full-aperture normalization below, avoiding an all-edge polygon scan
+      // for every distant face of a large grid.
       if (g.xf[i] < pminx || g.xf[i] > pmaxx ||
           g.yf[j + 1] < pminy || g.yf[j] > pmaxy) {
         cut->axl[f] = g.dy[j + ng]; cut->axy[f] = g.yc[j + ng];
@@ -320,7 +320,7 @@ int cut2d_build_polygon(const Solver2D* s, const double* px, const double* py, i
       double L, C;
       aperture_line(px, py, n, true, g.xf[i], g.yf[j], g.yf[j + 1], &L, &C);
       cut->axl[f] = L; cut->axy[f] = C;
-      // 完整開口：用精確格寬（避免 xf 相減的 1e-16 差）
+      // Use the exact width for a full aperture, avoiding ~1e-16 subtraction roundoff.
       if (std::fabs(L - g.dy[j + ng]) < 1e-13 * g.dy[j + ng]) { cut->axl[f] = g.dy[j + ng]; cut->axy[f] = g.yc[j + ng]; }
       if (L < 1e-13 * g.dy[j + ng]) { cut->axl[f] = 0.0; cut->axy[f] = g.yc[j + ng]; }
     }
@@ -339,7 +339,7 @@ int cut2d_build_polygon(const Solver2D* s, const double* px, const double* py, i
       if (L < 1e-13 * g.dx[i + ng]) { cut->ayl[f] = 0.0; cut->ayx[f] = g.xc[i + ng]; }
     }
 
-  // 3) 每格：壁面線段、面積與形心（邊界積分）
+  // 3) Per-cell wall segments, area, and centroid from boundary integrals.
   cut->nsolid = cut->ncut = 0;
   for (int j = 0; j < ny; ++j)
     for (int i = 0; i < nx; ++i) {
@@ -350,14 +350,14 @@ int cut2d_build_polygon(const Solver2D* s, const double* px, const double* py, i
       double A = 0.0, MX = 0.0, MY = 0.0;  // A = ∮x dy，MX = 1/2∮x² dy，MY = -1/2∮y² dx
       bool has_wall = false;
       const size_t fragment_begin = cut->wall_fragments.size();
-      for (int a = 0, b0 = n - 1; a < n; b0 = a++) {  // 邊 b0 -> a
+      for (int a = 0, b0 = n - 1; a < n; b0 = a++) {  // Edge b0 -> a.
         double sx1 = px[b0], sy1 = py[b0], sx2 = px[a], sy2 = py[a];
         if (std::fmax(sx1, sx2) < x0 || std::fmin(sx1, sx2) > x1 || std::fmax(sy1, sy2) < y0 || std::fmin(sy1, sy2) > y1) continue;
         if (!clip_segment(&sx1, &sy1, &sx2, &sy2, x0, x1, y0, y1)) continue;
         double nfx, nfy;
         edge_normal_to_fluid(px, py, n, b0, 0.5 * (px[b0] + px[a]), 0.5 * (py[b0] + py[a]), 1e-7 * hmin, &nfx, &nfy);
         const double len = std::sqrt((sx2 - sx1) * (sx2 - sx1) + (sy2 - sy1) * (sy2 - sy1));
-        // 流體在左：方向 t = (nfy, -nfx)
+        // Fluid on the left: tangent t = (nfy,-nfx).
         const double tx = nfy, ty = -nfx;
         if ((sx2 - sx1) * tx + (sy2 - sy1) * ty < 0.0) { std::swap(sx1, sx2); std::swap(sy1, sy2); }
         A += 0.5 * (sx1 + sx2) * (sy2 - sy1);
@@ -378,9 +378,9 @@ int cut2d_build_polygon(const Solver2D* s, const double* px, const double* py, i
         if (inside) {
           cut->vol[k] = 0.0; cut->flag[k] = 2.0; ++cut->nsolid;
         }
-        continue;  // 完整流體：保持預設
+        continue;  // Full fluid cell: retain defaults.
       }
-      // 格面：東 +y（dy=+ae）、北 -x（dx=-an）、西 -y（dy=-aw）、南 +x（dx=+as）
+      // Face orientations: east +y, north -x, west -y, south +x.
       A += x1 * ae - x0 * aw;
       MX += 0.5 * x1 * x1 * ae - 0.5 * x0 * x0 * aw;
       MY += -0.5 * y1 * y1 * (-an) - 0.5 * y0 * y0 * as;
@@ -399,8 +399,8 @@ int cut2d_build_polygon(const Solver2D* s, const double* px, const double* py, i
       ++cut->ncut;
     }
 
-  // 4) 與固體格相鄰的格面：確保開口長度為 0（固體格不該有開口）
-  //    （若固體格是因面積過小被丟掉，它的面仍可能有極小的開口，守恆誤差 <= 1e-13 相對量）
+  // 4) Close faces adjacent to solid cells; solid cells must have zero aperture.
+  // A cell discarded for tiny area can leave a tiny opening; relative conservation error is <=1e-13.
   for (int j = 0; j < ny; ++j)
     for (int i = 0; i <= nx; ++i) {
       const size_t f = static_cast<size_t>(j) * (nx + 1) + i;
@@ -416,7 +416,7 @@ int cut2d_build_polygon(const Solver2D* s, const double* px, const double* py, i
       if (bsol || tsol) cut->ayl[f] = 0.0;
     }
 
-  // 5) 物體必須離計算域邊界至少 3 格
+  // 5) Keep the body at least three cells from the domain boundary.
   for (int j = 0; j < ny; ++j)
     for (int i = 0; i < nx; ++i) {
       if (cut->flag[static_cast<size_t>(j + ng) * mx + (i + ng)] == 0.0) continue;
@@ -426,7 +426,7 @@ int cut2d_build_polygon(const Solver2D* s, const double* px, const double* py, i
       }
     }
 
-  // 6) SRD 鄰域
+  // 6) SRD neighborhoods.
   std::vector<int> small_list;
   for (int j = 0; j < ny; ++j)
     for (int i = 0; i < nx; ++i) {
@@ -450,11 +450,11 @@ int cut2d_build_polygon(const Solver2D* s, const double* px, const double* py, i
     int mem[25];
     auto vol_of = [&](int ii, int jj) { return cut->vol[static_cast<size_t>(jj + ng) * mx + (ii + ng)]; };
     bool ok = false;
-    // (1) 法向合併
+    // (1) Merge along the wall normal.
     const double awx = cut->wax[k], awy = cut->way[k];
     const double alen = std::sqrt(awx * awx + awy * awy);
     if (alen > 1e-14) {
-      const double nfx = -awx / alen, nfy = -awy / alen;  // 指向流體
+      const double nfx = -awx / alen, nfy = -awy / alen;  // Points into fluid.
       int di = 0, dj = 0;
       if (std::fabs(nfx) >= std::fabs(nfy)) di = (nfx > 0) ? 1 : -1; else dj = (nfy > 0) ? 1 : -1;
       const int ii = i + di, jj = j + dj;
@@ -464,7 +464,7 @@ int cut2d_build_polygon(const Solver2D* s, const double* px, const double* py, i
         ok = true;
       }
     }
-    // (2) 3x3 置中，(3) 5x5
+    // (2) Centered 3x3 neighborhood, then (3) 5x5.
     for (int r = 1; r <= 2 && !ok; ++r) {
       cnt = 0;
       double vs = 0.0;
@@ -479,7 +479,7 @@ int cut2d_build_polygon(const Solver2D* s, const double* px, const double* py, i
         }
       if (vs >= half) ok = true;
     }
-    if (!ok) ++cut->nbad_nbhd;  // 用 5x5 內所有流體格，仍不足（極端幾何）
+    if (!ok) ++cut->nbad_nbhd;  // Even all fluid cells in 5x5 have insufficient volume; extreme geometry.
     cut->scnt[q] = cnt;
     for (int m = 0; m < cnt; ++m) {
       cut->smem[25 * static_cast<size_t>(q) + m] = mem[m];
@@ -500,7 +500,7 @@ int cut2d_build_polygon(const Solver2D* s, const double* px, const double* py, i
 
 
 // ---------------------------------------------------------------------------
-// 殘差
+// Residual assembly.
 // ---------------------------------------------------------------------------
 namespace {
 
@@ -536,7 +536,7 @@ void cut2d_residual(const Solver2D* s, const double* U, double* R, double* W, do
   const size_t nfx = static_cast<size_t>(nx + 1) * ny;
   const size_t nfy = static_cast<size_t>(nx) * (ny + 1);
 
-  // 「規則」格：自己與 4 個邊鄰格都是完整流體格 -> 與無物體求解器完全相同的斜率公式
+  // Regular cell and four face neighbors are full fluid: use the body-free directional slope formula.
   std::vector<unsigned char> regular(cells, 0);
 #ifdef _OPENMP
 #pragma omp parallel for collapse(2) schedule(static) if(cells >= 4096)
@@ -559,7 +559,7 @@ void cut2d_residual(const Solver2D* s, const double* U, double* R, double* W, do
     double* FYc = FY + static_cast<size_t>(c) * NVAR2D * nfy;
     const double mco = s->mco[c];
 
-    // 1) 原始變數（固體格不算）
+    // 1) Primitive variables, excluding solid.
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) if(cells >= 4096)
 #endif
@@ -575,8 +575,8 @@ void cut2d_residual(const Solver2D* s, const double* U, double* R, double* W, do
       Wc[3 * cells + k] = (gm - 1.0) * (E - 0.5 * mu * mu / r - 0.5 * mv * mv / r);
     }
 
-    // 2) 斜率
-    // 2a) 規則區：原本的逐方向限制（含 ng 層鬼格子裡 i=-1..nx、j=-1..ny 的格子）
+    // 2) Slopes.
+    // 2a) Regular region: original directional limiting, including i=-1..nx and j=-1..ny in ghost layers.
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) if(cells >= 4096)
 #endif
@@ -607,7 +607,7 @@ void cut2d_residual(const Solver2D* s, const double* U, double* R, double* W, do
           sy[id] = limited_slope(q[id - mx], q[id], q[id + mx], hl, hr, g.dy[b], par.limiter, par.venkat_k);
         }
     }
-    // 2b) 非規則區（被切到的格子與其邊鄰格）：最小平方梯度 + 多維限制
+    // 2b) Irregular region: least-squares gradients and multidimensional limiting for cut cells and face neighbors.
 #ifdef _OPENMP
 #pragma omp parallel for collapse(2) schedule(static) if(cells >= 4096)
 #endif
@@ -616,7 +616,7 @@ void cut2d_residual(const Solver2D* s, const double* U, double* R, double* W, do
         const size_t k = static_cast<size_t>(j + ng) * mx + (i + ng);
         if (regular[k] || ct.vol[k] <= 0.0) continue;
         const double xk = ct.cx[k], yk = ct.cy[k];
-        // 鄰居（3x3 中的流體格；不夠就 5x5）
+        // Fluid neighbors in 3x3, expanded to 5x5 if necessary.
         int nb[24], nn = 0;
         double Sxx = 0, Sxy = 0, Syy = 0;
         for (int r = 1; r <= 2; ++r) {
@@ -634,10 +634,10 @@ void cut2d_residual(const Solver2D* s, const double* U, double* R, double* W, do
             }
           const double det = Sxx * Syy - Sxy * Sxy;
           if (nn >= 2 && det > 1e-8 * Sxx * Syy && det > 0.0) break;
-          if (r == 2) nn = -1;  // 退化：斜率 0
+          if (r == 2) nn = -1;  // Degenerate stencil: use zero slope.
         }
         const double det = Sxx * Syy - Sxy * Sxy;
-        // 評估點：開口形心與壁面形心
+        // Evaluation points: aperture centroids and wall centroid.
         double ex[5], ey[5];
         int ne = 0;
         const double xfE = g.xf[i + 1], xfW = g.xf[i], yfN = g.yf[j + 1], yfS = g.yf[j];
@@ -693,7 +693,7 @@ void cut2d_residual(const Solver2D* s, const double* U, double* R, double* W, do
     const double* Sr = SXc; const double* Su = SXc + cells; const double* Sv = SXc + 2 * cells; const double* Sp = SXc + 3 * cells;
     const double* Tr = SYc; const double* Tu = SYc + cells; const double* Tv = SYc + 2 * cells; const double* Tp = SYc + 3 * cells;
 
-    // 3a) x 面
+    // 3a) x faces.
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) if(cells >= 4096)
 #endif
@@ -730,7 +730,7 @@ void cut2d_residual(const Solver2D* s, const double* U, double* R, double* W, do
         FXc[0 * nfx + f] = F[0]; FXc[1 * nfx + f] = F[1]; FXc[2 * nfx + f] = F[2]; FXc[3 * nfx + f] = F[3];
       }
     }
-    // 3b) y 面
+    // 3b) y faces.
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) if(cells >= 4096)
 #endif
@@ -766,7 +766,7 @@ void cut2d_residual(const Solver2D* s, const double* U, double* R, double* W, do
         FYc[0 * nfy + f] = F[0]; FYc[1 * nfy + f] = F[2]; FYc[2 * nfy + f] = F[1]; FYc[3 * nfy + f] = F[3];
       }
 
-    // 4) 收集
+    // 4) Gather fluxes.
 #ifdef _OPENMP
 #pragma omp parallel for collapse(2) schedule(static) if(cells >= 4096)
 #endif
@@ -778,7 +778,7 @@ void cut2d_residual(const Solver2D* s, const double* U, double* R, double* W, do
           for (int v = 0; v < NVAR2D; ++v) Rc[static_cast<size_t>(v) * cells + k] = 0.0;
           continue;
         }
-        if (ct.flag[k] == 0.0) {  // 完整格：與無物體求解器相同的算式
+        if (ct.flag[k] == 0.0) {  // Full cell: use exactly the body-free solver expression.
           const double idx = 1.0 / g.dx[i + ng], idy = 1.0 / g.dy[j + ng];
           for (int v = 0; v < NVAR2D; ++v) {
             const double* fx = FXc + static_cast<size_t>(v) * nfx;
@@ -789,7 +789,7 @@ void cut2d_residual(const Solver2D* s, const double* U, double* R, double* W, do
         }
         const double ae = ct.axl[fe + 1], aw = ct.axl[fe], an = ct.ayl[fn + nx], as = ct.ayl[fn];
         const double iv = 1.0 / ct.vol[k];
-        // 壁面壓力：由格內線性重構外插到壁面形心
+        // Extrapolate cell pressure linearly to the wall centroid.
         double pw = Wp[k] + Sp[k] * (ct.wcx[k] - ct.cx[k]) + Tp[k] * (ct.wcy[k] - ct.cy[k]);
         if (!(pw > 0.0)) pw = Wp[k];
         for (int v = 0; v < NVAR2D; ++v) {
@@ -833,13 +833,13 @@ void cut2d_srd(const Solver2D* s, double* U) {
         }
         Qh[static_cast<size_t>(q) * NVAR2D + v] = sum / ct.svhat[q];
       }
-    // 取得任一格 t 的 (Q̂, x̂, ŷ)
+    // Obtain (Qhat,xhat,yhat) for any cell t.
     auto get_hat = [&](size_t t, int v, double* qv, double* xv, double* yv) {
       const int pos = static_cast<int>(ct.smallpos[t]);
       if (pos >= 0) { *qv = Qh[static_cast<size_t>(pos) * NVAR2D + v]; *xv = ct.sxhat[pos]; *yv = ct.syhat[pos]; }
       else { *qv = Uc[static_cast<size_t>(v) * cells + t]; *xv = ct.cx[t]; *yv = ct.cy[t]; }
     };
-    // 2) 斜率（小格子的鄰域）：3x3（不夠擴大到 5x3、3x5、5x5）的 Q̂ 最小平方 + Barth-Jespersen
+    // 2) Neighborhood slopes: least-squares Qhat and Barth-Jespersen limiting on 3x3, expanding to 5x3,3x5,5x5.
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) if(ns >= 64)
 #endif
@@ -920,7 +920,7 @@ void cut2d_srd(const Solver2D* s, double* U) {
       if (!good)
         for (int v = 0; v < NVAR2D; ++v) { gradx[static_cast<size_t>(q) * NVAR2D + v] = 0.0; grady[static_cast<size_t>(q) * NVAR2D + v] = 0.0; }
     }
-    // 3) 累加：非小格子自己的鄰域貢獻 Û；小格子的鄰域把 q̂(x_r) 加到每個成員
+    // 3) Accumulate each regular cell neighborhood value; add each small-cell reconstruction qhat(x_r) to its members.
 #ifdef _OPENMP
 #pragma omp parallel for collapse(2) schedule(static) if(cells >= 4096)
 #endif
@@ -938,7 +938,7 @@ void cut2d_srd(const Solver2D* s, double* U) {
               gradx[static_cast<size_t>(q) * NVAR2D + v] * (ct.cx[r] - ct.sxhat[q]) +
               grady[static_cast<size_t>(q) * NVAR2D + v] * (ct.cy[r] - ct.syhat[q]);
       }
-    // 4) 最終：U_r = acc_r / N_r（只有 N_r > 1 或小格子才會改變）
+    // 4) Final U_r = acc_r/N_r; only small cells or cells with N_r>1 change.
 #ifdef _OPENMP
 #pragma omp parallel for collapse(2) schedule(static) if(cells >= 4096)
 #endif
@@ -957,7 +957,7 @@ void cut2d_wall_force(const Solver2D* s, int c, double* fx, double* fy) {
   const Cut2D& ct = *s->cut;
   const Grid2D& g = s->grid;
   const size_t cells = static_cast<size_t>(g.mx) * g.my;
-  // 以目前的 U 重算原始變數與斜率（暫存陣列）
+  // Recompute primitives and slopes from current U using workspace arrays.
   Solver2D& sm = const_cast<Solver2D&>(*s);
   solver2d_apply_bc(&sm, sm.U.data());
   solver2d_residual(&sm, sm.U.data(), sm.R.data(), sm.W.data(), sm.SX.data(), sm.SY.data(), sm.FX.data(), sm.FY.data());
@@ -972,7 +972,7 @@ void cut2d_wall_force(const Solver2D* s, int c, double* fx, double* fy) {
       if (ct.flag[k] != 1.0) continue;
       double pw = Wp[k] + Sp[k] * (ct.wcx[k] - ct.cx[k]) + Tp[k] * (ct.wcy[k] - ct.cy[k]);
       if (!(pw > 0.0)) pw = Wp[k];
-      Fx += pw * ct.wax[k];  // 作用在物體上的力 = sum p_w * Aw（Aw 指向固體）
+      Fx += pw * ct.wax[k];  // Body force = sum p_w*Aw, with Aw pointing into solid.
       Fy += pw * ct.way[k];
     }
   *fx = Fx;
