@@ -1,0 +1,33 @@
+{
+  "freestream": {
+    "Mach": 0.78,
+    "AOA_degrees": 5.0,
+    "p_Pa": 101325.0,
+    "T_K": 288.15,
+    "chord_m": 1.0
+  },
+  "physics": {
+    "turbulence": "sa-neg",
+    "viscosity": "constant",
+    "constant_mu_Pa_s": 5.002346705183863e-05
+  },
+  "solver": {
+    "spatial_order": 1,
+    "preconditioning": "none",
+    "local_pseudo_time": true,
+    "CFL": 0.1,
+    "adaptive_cfl": {"enabled": false},
+    "mode": "steady",
+    "budget_seconds": 60.0,
+    "stop_time_star": 150.0,
+    "convergence": {
+      "metric": "cl_cm_cp",
+      "raw_tolerance": 0.01,
+      "coefficient_change": 0.005,
+      "cp_change": 0.005
+    }
+  },
+  "output": {
+    "formats": ["npz"]
+  }
+}

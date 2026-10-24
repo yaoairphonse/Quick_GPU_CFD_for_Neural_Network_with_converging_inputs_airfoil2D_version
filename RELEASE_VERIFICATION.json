@@ -1,0 +1,43 @@
+{
+  "date": "2026-10-24",
+  "source_comment_language_audit": "passed; source comments and CLI text are English",
+  "python_compileall": "passed",
+  "json_parse": "passed for all bundled JSON files",
+  "shell_syntax": "passed for all example shell scripts",
+  "cpu": {
+    "configure": "passed",
+    "full_build": "passed",
+    "ctest": "2/2 passed",
+    "sphere_end_to_end_smoke": "passed on the 7680-cell full-3D mesh",
+    "RAE2822_converter": "reproduced the 5051-cell LF1 mesh report",
+    "RAE2822_20_step_smoke": "completed normally with finite state and expected unconverged exit code 3",
+    "NACA4412_mesh_workflow": "LF1/LF2 reproduced 4718/9517 control volumes"
+  },
+  "cuda": {
+    "configure": "passed with CUDA 12.0 and architecture 89",
+    "full_build": "passed",
+    "ctest": "2/2 passed",
+    "runtime_smoke": "not run successfully in this packaging session",
+    "runtime_blocker": "WSL /dev/dxg was absent; executable reported CUDA driver version is insufficient for CUDA runtime version",
+    "nvidia_smi": "RTX 4090 visible with 24564 MiB; this does not replace a CUDA runtime test",
+    "prior_project_evidence": "CPU/CUDA fixed-step comparisons are recorded in reference metadata and the manuals"
+  },
+  "large_cases": "not rerun during packaging; retained result and audit metadata are bundled",
+  "showcase": {
+    "images": 12,
+    "cases": [
+      "NACA4412 LF1/LF2 Cartesian AMR",
+      "RAE2822 LF2 Cartesian AMR",
+      "Mach 1.65 three-dimensional sphere",
+      "RAE2822 LF2 wedge/hexa hybrid",
+      "NASA CRM tetrahedral section",
+      "NASA CRM Cartesian AMR flow, surface, and mesh sections"
+    ],
+    "rendering": "true mesh polygons or procedural cell ownership; no scattered interpolation",
+    "visual_inspection": "passed",
+    "json_parse": "50/50 bundled JSON files passed after gallery assembly",
+    "plotter_cli_smoke": "5/5 passed",
+    "cpu_ctest_after_gallery": "2/2 passed"
+  },
+  "license": "not selected by project owner"
+}

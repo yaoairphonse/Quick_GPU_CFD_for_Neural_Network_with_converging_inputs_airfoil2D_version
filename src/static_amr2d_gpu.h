@@ -20,6 +20,7 @@ int static_amr_gpu_create(const StaticAmrMesh2D&,const Params2D&,const StaticAmr
 // Returns 2 on optional wall-clock budget expiry, preserving a resumable accepted state.
 int static_amr_gpu_advance(StaticAmrGpu*,double tend,long maxsteps,StaticAmrState2D*,std::string*,double wall_budget_seconds=0);
 int static_amr_gpu_download(StaticAmrGpu*,StaticAmrState2D*,std::string*);
+int static_amr_gpu_set_cfl(StaticAmrGpu*,double,std::string*);
 AmrGpuStats static_amr_gpu_stats(const StaticAmrGpu*);
 void static_amr_gpu_destroy(StaticAmrGpu*);
 }

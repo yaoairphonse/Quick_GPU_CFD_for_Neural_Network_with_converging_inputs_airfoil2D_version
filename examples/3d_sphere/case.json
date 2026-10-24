@@ -1,0 +1,17 @@
+{
+  "geometry": "full six-block cubed sphere",
+  "subdivisions_per_cube_edge": 8,
+  "radial_layers": 20,
+  "outer_radius": 8.0,
+  "Mach": 1.65,
+  "Re_reference": 10000.0,
+  "AOA_degrees": 0.0,
+  "integrator": "dplur",
+  "CFL": 0.1,
+  "dplur_sweeps": 5,
+  "dplur_omega": 0.8,
+  "spatial_order": 2,
+  "reconstruction_blend": 0.5,
+  "SA_convection_order": 1,
+  "purpose": "full-3D conservation, positivity, restart, and CPU/CUDA regression"
+}

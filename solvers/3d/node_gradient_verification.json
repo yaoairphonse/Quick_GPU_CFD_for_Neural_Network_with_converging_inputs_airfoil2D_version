@@ -1,0 +1,60 @@
+{
+  "date": "2026-10-23",
+  "method": {
+    "cell_gradient": "adaptive-dimensional hybrid pseudo-Laplacian nodal interpolation with exact tetrahedral shape gradients",
+    "viscous_face_gradient": "Mitchell stencil from one cell-center and two face-edge differences",
+    "SA_convection_order_default": 1,
+    "legacy_path_retained": true
+  },
+  "coefficient_file": {
+    "path": "external-cache/crm10m/raw/node_gradient.bin",
+    "bytes": 1531050196,
+    "sha256": "25bed5e6a1e3bbab344695ec372887cb06c38621acdcc849f97d799221de0252",
+    "audit": "external-cache/crm10m/raw/node_gradient_audit.json"
+  },
+  "build_and_unit_tests": {
+    "CPU_build": "passed",
+    "CUDA_build": "passed",
+    "CPU_CTest": "2/2 passed",
+    "CUDA_CTest": "2/2 passed",
+    "legacy_20_vs_10_plus_10_relative_Linf": [0, 0, 0, 0, 0, 0]
+  },
+  "CRM_one_step": {
+    "CFL": 0.01,
+    "iterations": 1,
+    "rejected": 0,
+    "failed": false,
+    "CPU_CUDA_raw_residual_relative_Linf": 2.4011097731922113e-14,
+    "CPU_CUDA_load_absolute_Linf": 4.690692279041286e-15,
+    "CUDA_compute_seconds": 0.277921206,
+    "CPU_compute_seconds": 42.898448209
+  },
+  "CRM_100_step_CUDA": {
+    "path": "external-cache/verification/2026-10-23/crm_node_mitchell_100_cuda",
+    "CFL": 0.01,
+    "iterations": 100,
+    "rejected": 0,
+    "failed": false,
+    "initial_mean_residual": 0.043383422873252836,
+    "final_mean_residual": 0.026247254232821184,
+    "initial_SA_residual": 0.08210535678443615,
+    "final_SA_residual": 0.0588003171177398,
+    "CL": 0.5819697064774066,
+    "CD": 0.05191320227272233,
+    "CM_y": -0.14415871095622845,
+    "compute_seconds": 13.115917304,
+    "maximum_conservation_balance_error": 5.7833737798773655e-12,
+    "interpretation": "stability probe only; transient loads are not NASA validation"
+  },
+  "diagnostics": {
+    "directory": "external-cache/runs/crm_order2_block_sa1_post_review_600s/diagnostics",
+    "pressure_CD": 0.03132325315089691,
+    "viscous_CD": 0.021119845351819183,
+    "total_CD": 0.0524430985027161,
+    "wall_triangles": 97490,
+    "median_tetra_longest_edge_over_minimum_altitude": 94.32271575927734,
+    "internal_faces_nonorthogonality_above_70_degrees": 9171317
+  },
+  "passed": true,
+  "accuracy_validated": false
+}

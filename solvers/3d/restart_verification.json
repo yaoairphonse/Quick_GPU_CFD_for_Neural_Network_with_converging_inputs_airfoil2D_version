@@ -1,0 +1,34 @@
+{
+  "cpu": {
+    "backend": "cpu",
+    "integrator": "dplur",
+    "sphere_20_vs_10_plus_10_relative_Linf": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "invalid_checkpoints_rejected": true,
+    "input_directory_overwrite_rejected": true,
+    "passed": true
+  },
+  "cuda": {
+    "backend": "cuda",
+    "integrator": "dplur",
+    "sphere_20_vs_10_plus_10_relative_Linf": [
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "invalid_checkpoints_rejected": true,
+    "input_directory_overwrite_rejected": true,
+    "CRM_10067380_cells_roundtrip_bitwise_equal": true,
+    "CRM_initial_residual_relative_difference": 6.661582694527285e-14,
+    "passed": true
+  }
+}

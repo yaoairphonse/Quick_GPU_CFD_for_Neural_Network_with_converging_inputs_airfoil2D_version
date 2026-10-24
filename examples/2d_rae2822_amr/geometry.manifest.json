@@ -1,0 +1,12 @@
+{
+  "source": "external LF2_full_topology.npz (not bundled)",
+  "source_sha256": "de17233f736b4c1bf70edbef4bf1578e688276eaa9a54f105a0bb9ced0f9e99f",
+  "output_sha256": "65e8f6dd4c68cd6408abab809ff164f9eba0a9f9e505df3b3c7ba81c0aded9f5",
+  "vertices": 105,
+  "signed_area": 0.0777447685830528,
+  "source_wall_zones": {
+    "6": "lower",
+    "7": "upper"
+  },
+  "coordinate_transform": "none"
+}

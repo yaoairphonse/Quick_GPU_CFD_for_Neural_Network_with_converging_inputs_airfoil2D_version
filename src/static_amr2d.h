@@ -43,6 +43,7 @@ struct AmrFace2D {
   int left, right, axis, boundary; // -1 outside; normal points +axis
   double coordinate, lo, hi, length, centroid;
 };
+struct AmrReconstructionTerm2D { int neighbor; double x, y; };
 struct StaticAmrMesh2D {
   StaticAmrOptions2D options;
   AmrBoundary2D boundaries[4]; // xmin/xmax/ymin/ymax; immutable during a GPU session
@@ -60,6 +61,8 @@ struct StaticAmrMesh2D {
   std::vector<AmrFace2D> faces; // one entry per shared subface
   std::vector<WallFragment2D> walls;
   std::vector<size_t> face_offsets, cell_faces;
+  std::vector<size_t> reconstruction_offsets;
+  std::vector<AmrReconstructionTerm2D> reconstruction_terms;
   std::vector<size_t> group_offsets, group_members, member_offsets, member_groups;
   std::vector<double> group_volume;
   size_t background_leaves = 0, coarse_fine_faces = 0, small_cells = 0;
@@ -81,6 +84,10 @@ int static_amr2d_rhs(const StaticAmrMesh2D& mesh, const Params2D& params,
                      const std::vector<double>& u, std::vector<double>* residual,
                      std::vector<double>* integrated_face_flux = nullptr);
 int static_amr2d_redistribute(const StaticAmrMesh2D& mesh, std::vector<double>* u);
+void static_amr2d_reconstruct(const StaticAmrMesh2D& mesh, const std::vector<double>& primitive,
+                              std::vector<double>* slopes);
+int static_amr2d_wall_pressure(const StaticAmrMesh2D& mesh, const Params2D& params,
+                               const std::vector<double>& conserved, std::vector<double>* pressure);
 int static_amr2d_write_boundaries(const StaticAmrMesh2D& mesh, const Params2D& params,
                                   const std::string& prefix, std::string* error);
 // Output is geometry-aware: VTU cell outlines are background rectangles; alpha identifies cut volume.

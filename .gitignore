@@ -10,8 +10,21 @@ venv/
 # Generated simulations and validation artifacts; retain scripts and JSON summaries
 /runs/
 /local_chinese/
+/local_development/
 /validation/*/
 /validation/*.log
+
+# Multi-fidelity release outputs and external datasets
+/output/
+/external_data/
+/meshes/
+*.bin
+*.cgns
+*.tgz
+*.tar.gz
+*.npy
+*.npz
+!examples/**/*.npz
 
 # Local credentials and agent settings
 .env

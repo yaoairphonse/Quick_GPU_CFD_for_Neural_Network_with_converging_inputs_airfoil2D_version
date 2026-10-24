@@ -1,0 +1,16 @@
+{
+  "figure": "examples/3d_crm_tetra/showcase/crm_tetra_exact_section.png",
+  "mesh_topology": "body-fitted tetrahedra with triangular wall faces",
+  "source_cells": 10067380,
+  "plane_y_over_MAC": 2.102697720811817,
+  "shown_intersected_tetrahedra": 26710,
+  "zoom_intersected_tetrahedra": 11154,
+  "unique_cell_ids": 26710,
+  "Cp_range_shown_cells": [
+    -0.8875026307704029,
+    0.6174429360204731
+  ],
+  "result_converged": false,
+  "result_CD": 0.05244309850271608,
+  "field_note": "Cell-centered pressure; no scattered interpolation. Figure is for mesh identification."
+}

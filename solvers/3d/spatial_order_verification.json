@@ -1,0 +1,60 @@
+{
+  "date": "2026-10-23",
+  "default_spatial_order": 1,
+  "cpu_build_passed": true,
+  "cuda_12_compile_passed": true,
+  "cuda_runtime_test_passed": false,
+  "cuda_runtime_blocker": "The WSL instance had no /dev/dxg; CUDA reported that the driver was insufficient for the runtime.",
+  "first_order_regression": {
+    "sphere_restart_20_vs_10_plus_10_bitwise_equal": true,
+    "invalid_checkpoint_rejection_passed": true,
+    "CRM_checkpoint_raw_residual_relative_Linf": 1.752294035199963e-13,
+    "CRM_checkpoint_load_vector_relative_Linf": 3.031680966116064e-14,
+    "passed": true
+  },
+  "limited_reconstruction": {
+    "mean_flow_primitive_variables_reconstructed": 5,
+    "SA_convection_order": 1,
+    "limiter": "cell-wide Barth-Jespersen local-extrema limiter",
+    "limiter_fused_into_gradient_pass": true,
+    "additional_GPU_buffer_bytes": 0,
+    "sphere_300_step_fused_vs_unfused_bitwise_equal": true,
+    "sphere_300_step_unfused_CPU_seconds": 11.258808524,
+    "sphere_300_step_fused_CPU_seconds": 2.66769501,
+    "sphere_fusion_speedup": 4.220425679020932,
+    "CRM_residual_unfused_CPU_seconds": 12.712061965,
+    "CRM_residual_fused_CPU_seconds": 6.237702413,
+    "CRM_residual_fusion_speedup": 2.0379397931050356
+  },
+  "adaptive_CFL_stress_test": {
+    "mesh": "7680-cell full sphere",
+    "initial_CFL": 4.0,
+    "iterations": 500,
+    "rejected_updates": 3,
+    "positivity_CFL_reductions": 3,
+    "total_CFL_reductions": 5,
+    "final_CFL": 1.9258776968232951,
+    "final_step_scale": 1.0,
+    "final_raw_max": 0.03401025497278117,
+    "minimum_density": 0.17830248768538515,
+    "minimum_pressure": 0.1669005516605194,
+    "passed": true
+  },
+  "CRM_checkpoint_probe": {
+    "cells": 10067380,
+    "Mach": 0.85,
+    "AOA_degrees": 2.5,
+    "Re_reference": 5000000,
+    "spatial_order_1_raw_max": 0.011827356328591606,
+    "spatial_order_1_CD": 0.06941891914167922,
+    "spatial_order_2_initial_raw_max": 0.02658643471443131,
+    "spatial_order_2_initial_CD": 0.06943058984579657,
+    "one_step_CFL": 0.01,
+    "one_step_rejected_updates": 0,
+    "one_step_raw_max": 0.026567679003454997,
+    "one_step_CD": 0.06943042542492653,
+    "one_step_conservation_balance_Linf": 3.993472219576688e-12,
+    "long_continuation_completed": false
+  },
+  "passed_with_pending_cuda_runtime_checks": true
+}

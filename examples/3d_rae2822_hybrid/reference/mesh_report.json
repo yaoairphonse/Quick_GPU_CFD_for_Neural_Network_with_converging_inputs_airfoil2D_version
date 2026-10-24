@@ -1,0 +1,66 @@
+{
+  "workflow": "rae2822_npz_mixed_grid_to_qcfd3d1_thin_slab",
+  "topology": "external LF1_full_topology.npz (not bundled)",
+  "true_mesh": "external LF1_true_mesh.npz (not bundled)",
+  "zone_names": {
+    "1": [
+      "interior",
+      "interior-air"
+    ],
+    "2": [
+      "interior",
+      "surface_body"
+    ],
+    "5": [
+      "fluid",
+      "air"
+    ],
+    "6": [
+      "wall",
+      "lower_surface"
+    ],
+    "7": [
+      "wall",
+      "upper_surface"
+    ],
+    "8": [
+      "wall",
+      "far"
+    ],
+    "9": [
+      "pressure-outlet",
+      "outlet"
+    ]
+  },
+  "boundary_mapping": {
+    "zones_6_7": "bc=1 no-slip wall",
+    "zone_8": "bc=2 farfield",
+    "zone_9": "bc=2 farfield (QCFD3D1 has no separate pressure outlet)",
+    "spanwise_caps": "bc=3 symmetry"
+  },
+  "span": 0.1,
+  "cells": 5051,
+  "triangles": 4721,
+  "quadrilaterals": 330,
+  "faces": 17909,
+  "input_side_faces": 7807,
+  "interior_side_faces": 7676,
+  "wall_side_faces": 66,
+  "farfield_side_faces": 65,
+  "symmetry_cap_faces": 10102,
+  "adjacency_entries": 25585,
+  "least_squares_terms": 25585,
+  "minimum_cell_area": 4.827915109358125e-05,
+  "maximum_cell_area": 17.759827763122644,
+  "minimum_volume": 4.827915109358126e-06,
+  "maximum_volume": 1.7759827763122644,
+  "minimum_wall_distance": 0.002512346305547211,
+  "maximum_archived_center_discrepancy": 0.001217303810845406,
+  "maximum_cell_closure_l2": 1.7772239894833365e-16,
+  "volume_balance_error": 3.183231456205249e-12,
+  "minimum_face_distance": 0.0025123463055472073,
+  "maximum_least_squares_condition": 3.9266995332397463,
+  "maximum_least_squares_identity_error": 4.440892098500626e-16,
+  "coordinate_mapping": "input (x,y) -> solver (x,z); extrusion is solver y",
+  "mesh_format": "QCFD3D1 text owner/neighbour polyhedra; wedges and hexahedra are not subdivided"
+}

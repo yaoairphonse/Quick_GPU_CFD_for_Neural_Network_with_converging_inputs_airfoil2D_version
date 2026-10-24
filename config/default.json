@@ -28,6 +28,11 @@
     "wall_probe_min_h": 0.25
   },
   "solver": {
+    "spatial_order": 1,
+    "preconditioning": "none",
+    "mach_floor": 0.02,
+    "local_pseudo_time": false,
+    "adaptive_cfl": {"enabled": false, "minimum": 0.03, "maximum": 0.45, "growth": 1.1, "shrink": 0.5},
     "backend": "cuda",
     "flux": "hllc",
     "sa_layout": "fused",
@@ -46,6 +51,8 @@
       0.0
     ],
     "convergence": {
+      "metric": "all_loads",
+      "cp_change": 0.005,
       "raw_tolerance": 0.001,
       "coefficient_change": 0.005,
       "hold": 5,
@@ -60,6 +67,7 @@
     }
   },
   "mesh": {
+    "method": "cartesian_amr_2d",
     "bounds_xy_c": [
       -7.0,
       14.0,

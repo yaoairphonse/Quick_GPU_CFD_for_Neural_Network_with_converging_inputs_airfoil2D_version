@@ -98,8 +98,18 @@ def run_one(exe, config, label, geometry, folder, name, mesh_only=False):
         dump(folder/'invocation.json',dict(returncode=process.returncode,process_seconds=wall,failed=True))
         raise RuntimeError(f'{label} solver failed; inspect {folder/"solver.log"}')
     result=json.loads(result_path.read_text())
+    expected_order=config['solver']['spatial_order']
+    expected_metric=config['solver']['convergence']['metric']
+    if result.get('spatial_order',1)!=expected_order or result.get('convergence_metric','all_loads')!=expected_metric:
+        raise RuntimeError(f'{label} executable did not honor requested spatial order or convergence metric; rebuild the solver')
+    result['mesh_workflow']='cartesian_amr_2d'
+    pseudo=(config['solver']['preconditioning']!='none' or config['solver']['local_pseudo_time'] or config['solver']['adaptive_cfl']['enabled'])
     result.update(process_seconds=wall,returncode=process.returncode,profile=label,
-                  physical_time_seconds=result['physical_time']*cfg.scales(config)['time'])
+                  time_kind='pseudo' if pseudo else 'physical',
+                  preconditioning=config['solver']['preconditioning'],
+                  physical_time_seconds=(result['physical_time']*cfg.scales(config)['time'] if not pseudo else None))
+    if result['time_kind']=='pseudo':
+        result['pseudo_time_star']=result['physical_time']
     result['gpu']=json.loads(Path(str(prefix)+'.gpu.json').read_text())
     if mesh_only:
         out=folder/'output';out.mkdir()
@@ -122,9 +132,9 @@ def index_page(out, summary):
                     f'<a href="{label}/output/">outputs</a></td></tr>')
     text='''<!doctype html><html lang="en"><meta charset="utf-8"><title>Quick CFD airfoil result</title>
 <style>body{font:16px/1.8 system-ui;max-width:1100px;margin:30px auto;padding:20px}table{border-collapse:collapse;width:100%}td,th{padding:8px;border-bottom:1px solid #ccc;text-align:left}img{width:100%}</style>'''
-    text+=f'<h1>{html.escape(summary["geometry"]["name"])}: LF1 / LF2</h1><p>Each grid starts independently from uniform freestream at t=0. Mechanical viscous model with kappa=0. Coordinates lie in the x-y plane; positive Mz is counterclockwise. Coarse-grid coefficients support qualitative studies and version comparisons.</p>'
+    text+=f'<h1>{html.escape(summary["geometry"]["name"])}: LF1 / LF2</h1><p>This result uses the dedicated two-dimensional Cartesian-AMR airfoil workflow. Each grid starts independently from uniform freestream at t=0. Mechanical viscous model with kappa=0. Coordinates lie in the x-y plane; positive Mz is counterclockwise. Coarse-grid coefficients support qualitative studies and version comparisons.</p>'
     text+='<table><tr><th>profile</th><th>Fluid CVs</th><th>status</th><th>mesh(s)</th><th>GPU event(s)</th><th>process(s)</th><th>Data</th></tr>'+''.join(rows)+'</table>'
-    text+='<p>Total pipeline time, including geometry processing, solver processes, and Python exports: '+format(summary['pipeline_seconds'],'.4f')+' seconds. GPU event time is elapsed stream time, including possible dispatch gaps; it is zero for CPU runs. Full timing and configuration: <a href="pipeline.json">pipeline.json</a>。</p>'
+    text+='<p>Total pipeline time, including geometry processing, solver processes, and Python exports: '+format(summary['pipeline_seconds'],'.4f')+' seconds. GPU event time is elapsed stream time, including possible dispatch gaps; it is zero for CPU runs. Full timing and configuration: <a href="pipeline.json">pipeline.json</a>.</p>'
     for c in summary['cases']:
         text+=f'<h2>{c["profile"]} mesh close-up</h2><img src="{c["profile"]}/output/mesh.svg"><p>Background member rectangles and the original airfoil outline are shown. Cut-cell integration uses actual fluid areas and wall fragments.</p>'
     (out/'index.html').write_text(text+'</html>')
@@ -133,7 +143,7 @@ def index_page(out, summary):
 def run(args):
     start=time.perf_counter()
     c=configure(args)
-    exe=executable(c['solver']['backend'])
+    exe=Path(args.executable).resolve() if args.executable else executable(c['solver']['backend'])
     if not exe.exists():
         raise ValueError('solver not built: run python3 quick_cfd.py build (or build --cpu)')
     source=Path(args.points).resolve()
@@ -145,13 +155,13 @@ def run(args):
         raise ValueError(f'output folder is not empty: {out}; choose a new folder')
     out.mkdir(parents=True,exist_ok=True)
     dump(out/'config.resolved.json',c)
-    prepared=time.perf_counter();geometry=prepare(source,out/'geometry')
+    prepared=time.perf_counter();geometry=prepare(source,out/'geometry',args.point_format)
     prep_seconds=time.perf_counter()-prepared
     vertices=np.loadtxt(out/'geometry/airfoil.csv',delimiter=',',skiprows=1)
     b=c['mesh']['bounds_xy_c']
     if not (np.all(vertices[:,0]>b[0]) and np.all(vertices[:,0]<b[1]) and np.all(vertices[:,1]>b[2]) and np.all(vertices[:,1]<b[3])):
         raise ValueError('airfoil must lie strictly inside configured domain')
-    summary=dict(geometry=geometry,config=c,scales=cfg.scales(c),geometry_preparation_seconds=prep_seconds,
+    summary=dict(mesh_workflow='cartesian_amr_2d',geometry=geometry,config=c,scales=cfg.scales(c),geometry_preparation_seconds=prep_seconds,
                  executable_sha256=hashlib.sha256(exe.read_bytes()).hexdigest(),
                  source_sha256={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in (ROOT/'src').iterdir() if p.is_file()},
                  pipeline_sha256={str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in [ROOT/'quick_cfd.py',ROOT/'config/default.json',*(ROOT/'pipeline').glob('*.py')]},
@@ -218,6 +228,8 @@ def main():
     for command in ['run','mesh']:
         p=sub.add_parser(command,help='both LF1 and LF2 by default')
         p.add_argument('--points',required=True);p.add_argument('--config');p.add_argument('--out')
+        p.add_argument('--executable',help='explicit solver executable, for independent builds')
+        p.add_argument('--point-format',choices=['gxxx','polygon'],default='gxxx',help='polygon requires an ordered x,y,patch CSV')
         p.add_argument('--levels',nargs='+',choices=['LF1','LF2'],default=['LF1','LF2'])
         for flag in ['mach','aoa','pressure','temperature','chord','cfl','dt']:
             p.add_argument('--'+flag,type=float)

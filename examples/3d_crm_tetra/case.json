@@ -1,0 +1,20 @@
+{
+  "source": "NASA DPW4 dpw-wbt0_med-10Mc_5",
+  "cells": 10067380,
+  "Mach": 0.85,
+  "AOA_degrees": 2.5,
+  "Re_reference": 5000000.0,
+  "mu_inf_star": 1.7e-7,
+  "reference_area_half_model": 3.9092552169415784,
+  "moment_reference": [4.807469180565627, 0.0, 0.6451776649746193],
+  "integrator": "dplur",
+  "gradient": "node",
+  "viscous_face_gradient": "Mitchell node-face stencil",
+  "spatial_order": 2,
+  "SA_convection_order": 1,
+  "CFL": 0.03,
+  "dplur_sweeps": 5,
+  "dplur_omega": 0.8,
+  "dplur_block_coupling": true,
+  "status": "development configuration; CRM loads are not converged"
+}

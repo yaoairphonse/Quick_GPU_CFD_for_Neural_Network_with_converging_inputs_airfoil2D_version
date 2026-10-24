@@ -1,0 +1,54 @@
+{
+  "date": "2026-10-23",
+  "scope": [
+    "symmetric preconditioned 3D face spectral bound",
+    "verified binary best-checkpoint publication"
+  ],
+  "clean_builds": {
+    "cpu": "external-cache/build/sphere_cpu_fix_review",
+    "cuda": "external-cache/build/sphere_cuda_fix_review",
+    "cpu_compile_passed": true,
+    "cuda_12_compile_passed": true
+  },
+  "low_mach_face_speed_test": {
+    "fast_right_state_bounded": true,
+    "pressure_jump_acoustic_radius_bounded": true,
+    "owner_orientation_invariant": true,
+    "cpu_ctest_passed": true,
+    "cuda_build_ctest_passed": true
+  },
+  "checkpoint_tests": {
+    "binary_state_exact_size": true,
+    "binary_best_state_exact_size": true,
+    "binary_best_checkpoint_available": true,
+    "metadata_only_best_checkpoint_available": false,
+    "forced_best_state_write_failure_exit_code": 2,
+    "result_suppressed_after_write_failure": true,
+    "invalid_checkpoints_rejected": true
+  },
+  "restart_test": {
+    "integrator": "dplur",
+    "steps_direct": 20,
+    "steps_restarted": "10+10",
+    "relative_Linf_by_conserved_variable": [0, 0, 0, 0, 0, 0]
+  },
+  "preconditioned_block_DPLUR_short_test": {
+    "mesh_cells": 7680,
+    "Mach": 0.2,
+    "iterations": 20,
+    "failed": false,
+    "CPU_vs_CUDA_build_CPU_path_relative_Linf": 0,
+    "raw_residual": [
+      0.006099470770148766,
+      0.0012167082811311756,
+      0.0001625944043127698,
+      0.00016259241254469524,
+      0.015370283324450729,
+      0.011029287158049244
+    ]
+  },
+  "cuda_runtime_test_passed": false,
+  "cuda_runtime_blocker": "nvidia-smi sees the RTX 4090, but /dev/dxg is absent and CUDA reports that the driver version is insufficient for the runtime",
+  "long_CFD_run_launched": false,
+  "passed_with_pending_cuda_runtime": true
+}

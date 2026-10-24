@@ -1,0 +1,150 @@
+{
+  "date": "2026-10-23",
+  "hardware": "NVIDIA GeForce RTX 4090",
+  "case": {
+    "name": "NASA DPW4 CRM medium tetrahedral half-model",
+    "cells": 10067380,
+    "Mach": 0.85,
+    "AOA_degrees": 2.5,
+    "Re_reference": 5000000
+  },
+  "reconstruction_continuation": {
+    "start_blend": 0.1,
+    "final_blend": 1.0,
+    "compute_seconds": 90.129569931,
+    "iterations": 1044,
+    "rejected_updates": 0,
+    "rollbacks": 0,
+    "note": "The completed run made one redundant endpoint ramp because of floating-point comparison; the code now uses an endpoint tolerance."
+  },
+  "block_DPLUR_time_matched_CFL_0p1": {
+    "seconds": 45,
+    "scalar": {
+      "iterations": 536,
+      "mean_flow_residual_max": 0.0034375492711473314,
+      "SA_residual": 0.01530956156719796
+    },
+    "block_neighbor_action": {
+      "iterations": 424,
+      "mean_flow_residual_max": 0.0032764241955746173,
+      "SA_residual": 0.015066065018113179
+    },
+    "mean_flow_residual_improvement_fraction": 0.0468717704,
+    "SA_residual_improvement_fraction": 0.0159050108,
+    "per_step_cost_increase_fraction": 0.2654,
+    "sphere_CPU_CUDA_state_relative_Linf": 2.138754319246284e-16
+  },
+  "adaptive_block_continuation": {
+    "compute_seconds": 120.133334739,
+    "iterations": 1127,
+    "initial_CFL": 0.1,
+    "final_CFL": 0.11,
+    "CFL_reductions": 0,
+    "rollbacks": 0,
+    "rejected_updates": 0,
+    "raw_residual": [
+      0.001189141990306524,
+      0.0009865516912471155,
+      0.0007228954146712296,
+      0.000906140681102394,
+      0.003107751890204242,
+      0.015569812371985297
+    ],
+    "CL": 0.5352065916794276,
+    "CD": 0.0686350105957,
+    "CM_y": -0.10259340528266872,
+    "converged": false
+  },
+  "SA_step_ratio_time_matched_45s": {
+    "start_checkpoint": "external-cache/runs/crm_order2_block_adaptive_120s/state.bin",
+    "CFL": 0.1,
+    "ratios": {
+      "0.10": {
+        "iterations": 423,
+        "mean_flow_residual_max": 0.0029351988197009364,
+        "SA_residual": 0.015924636906728334
+      },
+      "0.25": {
+        "iterations": 425,
+        "mean_flow_residual_max": 0.0029348210274631392,
+        "SA_residual": 0.015647409929469187
+      },
+      "0.50": {
+        "iterations": 421,
+        "mean_flow_residual_max": 0.0029351602333769836,
+        "SA_residual": 0.015339177340677941
+      },
+      "1.00": {
+        "iterations": 419,
+        "mean_flow_residual_max": 0.0029351347806294364,
+        "SA_residual": 0.014959596946093235
+      }
+    },
+    "selected_ratio": 1.0,
+    "finding": "The mean-flow residual was insensitive to the SA step ratio over this short window, while SA=1.0 gave the lowest turbulence residual without rejection."
+  },
+  "adaptive_reversal_continuation": {
+    "path": "external-cache/runs/crm_order2_block_sa1_reversal_180s",
+    "compute_seconds": 180.063422003,
+    "iterations": 1685,
+    "initial_CFL": 0.1,
+    "terminal_CFL": 0.13310000000000002,
+    "reversal_CFL_reductions": 2,
+    "rollbacks": 0,
+    "rejected_updates": 0,
+    "terminal_raw_residual": [
+      0.0010390283623659116,
+      0.0009244166393916057,
+      0.00047620129312149245,
+      0.0006661583929491177,
+      0.00279663009629869,
+      0.015126767616199145
+    ],
+    "best_checkpoint": {
+      "file": "best_state.bin",
+      "iteration": 900,
+      "CFL": 0.16105100000000006,
+      "raw_residual": [
+        0.0010601602821536098,
+        0.0009189303636626037,
+        0.0005847897382701211,
+        0.0008162634736412164,
+        0.0027911816453767284,
+        0.014650174230735041
+      ],
+      "CD": 0.06532746807362715,
+      "CL": 0.535940225300399,
+      "CM_y": -0.1069709355036777,
+      "zero_step_restart_audit": {
+        "exact_residual_and_load_match": true,
+        "maximum_conservation_balance_error": 6.733585911078421e-12
+      }
+    },
+    "terminal_loads": {
+      "CD": 0.0605503619625123,
+      "CL": 0.5409548358375579,
+      "CM_y": -0.12071783008310236
+    },
+    "maximum_conservation_balance_error": 1.8134146961834574e-11,
+    "finding": "Persistent joint mean-flow/SA growth triggered one-level CFL reductions at iterations 1250 and 1400. This slowed but did not reverse the late SA increase, so the run is stable but not converged; continue from best_state.bin, not the terminal state.bin."
+  },
+  "agglomeration": {
+    "format": "QCFDMG1",
+    "path": "external-cache/crm10m/raw/agglomeration_3level.bin",
+    "sha256": "5f4a93747c1a71dd8e5934f02f614f6dbee63d6fbc38cfc4af9e65b980d9fe40",
+    "file_bytes": 50448336,
+    "cell_counts": [10067380, 2544686, 641139],
+    "full_parent_map_validation": true,
+    "mean_only_smoothing_time_matched_45s": {
+      "weight": 0.2,
+      "baseline_mean_flow_residual_max": 0.0029348210274631392,
+      "smoothed_mean_flow_residual_max": 0.0029289491549435139,
+      "baseline_SA_residual": 0.015647409929469187,
+      "smoothed_SA_residual": 0.015616799136091982,
+      "mean_flow_improvement_fraction": 0.0020007480,
+      "step_cost_increase_fraction": 0.0564
+    },
+    "status": "Hierarchy, conservative restriction, and prolongated residual smoothing are implemented. Coarse finite-volume operators and FAS correction are not yet implemented."
+  },
+  "passed": true
+}

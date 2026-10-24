@@ -1,0 +1,22 @@
+{
+  "cpu_gpu_relative_Linf": {
+    "x_R": 0.0,
+    "y_R": 0.0,
+    "z_R": 0.0,
+    "volume_R3": 0.0,
+    "rho": 1.035322247956062e-15,
+    "u_a": 1.857697152137615e-15,
+    "v_a": 5.430539902177782e-15,
+    "w_a": 9.597925367626135e-15,
+    "p_rhoa2": 1.7439041232930324e-15,
+    "Mach": 2.28751509782657e-15,
+    "T_Tinf": 2.1505760220014027e-15,
+    "nutilde": 1.7123910984212195e-15,
+    "mu_t": 6.364703590192669e-15
+  },
+  "positivity_passed": true,
+  "conservation_identity_passed": true,
+  "third_velocity_component_present": true,
+  "relative_transverse_force": 1.890329431577957e-05,
+  "note": "Development verification on coarse mesh; no experimental or grid-independence claim."
+}

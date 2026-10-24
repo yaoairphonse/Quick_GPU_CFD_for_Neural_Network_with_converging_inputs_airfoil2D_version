@@ -53,6 +53,15 @@ def bounds(value, name):
 
 def validate(c):
     f, p, s, m, o = (c[k] for k in ['freestream', 'physics', 'solver', 'mesh', 'output'])
+    # The public airfoil driver remains the dedicated Cartesian-AMR workflow.
+    # The separate 3D hybrid workflow has its own geometry and table schema.
+    m.setdefault('method', 'cartesian_amr_2d')
+    if m['method'] != 'cartesian_amr_2d':
+        raise ValueError('this driver requires mesh.method=cartesian_amr_2d')
+    # Older saved runs predate the optional steady-development controls.
+    s.setdefault('preconditioning','none');s.setdefault('mach_floor',.02);s.setdefault('local_pseudo_time',False)
+    s.setdefault('spatial_order',1)
+    s.setdefault('adaptive_cfl',dict(enabled=False,minimum=.03,maximum=.45,growth=1.1,shrink=.5))
     for k in ['Mach', 'p_Pa', 'T_K', 'chord_m', 'R_J_kgK']:
         positive(f[k], 'freestream.' + k)
     positive(f['gamma'] - 1, 'gamma - 1')
@@ -69,6 +78,20 @@ def validate(c):
     positive(p['wall_probe_min_h'], 'wall_probe_min_h', 2, True)
     if s['backend'] not in ['cpu', 'cuda'] or s['flux'] not in ['hllc', 'ausm'] or s['sa_layout'] not in ['reference', 'fused'] or s['mode'] not in ['steady', 'time']:
         raise ValueError('invalid backend, flux, sa_layout, or solver mode')
+    if s['preconditioning'] not in ['none', 'turkel']:
+        raise ValueError('solver.preconditioning must be none|turkel')
+    integer(s['spatial_order'], 'solver.spatial_order', 1, 2)
+    positive(s['mach_floor'], 'solver.mach_floor', 1)
+    ac=s['adaptive_cfl']
+    if not isinstance(s['local_pseudo_time'],bool) or not isinstance(ac['enabled'],bool):
+        raise ValueError('local_pseudo_time and adaptive_cfl.enabled must be booleans')
+    for key in ['minimum','maximum']:positive(ac[key],'adaptive_cfl.'+key,.5)
+    if (ac['enabled'] and (ac['minimum']>s['CFL'] or ac['maximum']<s['CFL'])) or ac['growth']<=1 or not 0<ac['shrink']<1:
+        raise ValueError('invalid adaptive CFL bounds or factors')
+    if (s['local_pseudo_time'] or ac['enabled']) and (s['mode']!='steady' or s['time_step']['mode']!='cfl'):
+        raise ValueError('local/adaptive stepping is restricted to steady pseudo-time with automatic CFL')
+    if s['preconditioning'] != 'none' and (s['mode'] != 'steady' or s['time_step']['mode'] != 'cfl'):
+        raise ValueError('preconditioning requires steady pseudo-time and automatic CFL')
     for k, maximum in [('CFL', .5), ('viscous_CFL', .2), ('SA_CFL', .1)]:
         positive(s[k], k, maximum)
     positive(s['stop_time_star'], 'stop_time_star')
@@ -81,6 +104,10 @@ def validate(c):
     elif ts['dt_seconds'] is not None:
         raise ValueError('use null dt_seconds in CFL mode')
     cv = s['convergence']
+    cv.setdefault('metric','all_loads');cv.setdefault('cp_change',.005)
+    if cv['metric'] not in ['all_loads','cl_cm_cp']:
+        raise ValueError('convergence.metric must be all_loads|cl_cm_cp')
+    positive(cv['cp_change'], 'convergence.cp_change')
     for k in ['raw_tolerance', 'coefficient_change', 'check_period_star']:
         positive(cv[k], 'convergence.' + k)
     if cv['check_period_star'] <= .01:
@@ -149,14 +176,18 @@ def settings(c, label, name, mode=None):
     b = m['bounds_xy_c']
     r = cv['residual_region_xy_c']
     out = dict(name=name, mode=mode or s['mode'], backend=s['backend'], mesh_preset=label,
+               preconditioning=s['preconditioning'], mach_floor=s['mach_floor'],
+               local_pseudo_time=int(s['local_pseudo_time']),adaptive_cfl=int(s['adaptive_cfl']['enabled']),
+               cfl_min=s['adaptive_cfl']['minimum'],cfl_max=s['adaptive_cfl']['maximum'],
+               cfl_growth=s['adaptive_cfl']['growth'],cfl_shrink=s['adaptive_cfl']['shrink'],
                viscosity=p['viscosity'], turbulence=p['turbulence'], sa_layout=s['sa_layout'],
                stop_time=s['stop_time_star'], budget=s['budget_seconds'], mu_star=mu,
                mach=f['Mach'], aoa=f['AOA_degrees'], gamma=f['gamma'], events=1,
                nx=m['base_shape'][0], ny=m['base_shape'][1], levels=profile['levels'],
                buffer=m['wall_buffer'], max_cells=m['max_cells'], xmin=b[0], xmax=b[1], ymin=b[2], ymax=b[3],
-               cfl=s['CFL'], fixed_dt=(s['time_step']['dt_seconds']/scale['time'] if s['time_step']['mode']=='fixed' else 0),
+               cfl=s['CFL'], spatial_order=s['spatial_order'], fixed_dt=(s['time_step']['dt_seconds']/scale['time'] if s['time_step']['mode']=='fixed' else 0),
                flux=s['flux'], moment_x=s['moment_reference_xy_c'][0], moment_y=s['moment_reference_xy_c'][1],
-               raw_tol=cv['raw_tolerance'], load_tol=cv['coefficient_change'], hold=cv['hold'],
+               raw_tol=cv['raw_tolerance'], load_tol=cv['coefficient_change'], cp_tol=cv['cp_change'], convergence_metric=cv['metric'], hold=cv['hold'],
                tmin=cv['min_time_star'], period=cv['check_period_star'],
                res_xmin=r[0], res_xmax=r[1], res_ymin=r[2], res_ymax=r[3],
                outlet_p_star=c['boundaries']['outlet_pressure_Pa']/scale['pressure'],

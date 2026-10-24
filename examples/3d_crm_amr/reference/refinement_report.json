@@ -1,0 +1,53 @@
+{
+  "status": "ISOTROPIC_WALL_REFINEMENT_COMPLETE",
+  "original_leaf_blocks": 37724,
+  "scope": "upper-wing",
+  "requested_wall_blocks": 2826,
+  "two_to_one_closure_blocks": 568,
+  "total_refined_parent_blocks": 3394,
+  "new_leaf_blocks": 61482,
+  "procedural_cells": 31478784,
+  "minimum_cell_size": 0.00390625,
+  "maximum_level": 10,
+  "level_counts": {
+    "2": 32,
+    "3": 198,
+    "4": 358,
+    "5": 640,
+    "6": 1164,
+    "7": 2390,
+    "8": 9446,
+    "9": 24646,
+    "10": 22608
+  },
+  "selection": {
+    "x": [
+      3.0,
+      7.2
+    ],
+    "abs_y": [
+      0.4,
+      4.3
+    ],
+    "fluid_outward_normal_z_lte": -0.2
+  },
+  "closure_history": [
+    {
+      "iteration": 0,
+      "added_coarse_blocks": 558
+    },
+    {
+      "iteration": 1,
+      "added_coarse_blocks": 8
+    },
+    {
+      "iteration": 2,
+      "added_coarse_blocks": 2
+    },
+    {
+      "iteration": 3,
+      "added_coarse_blocks": 0
+    }
+  ],
+  "mesh_policy": "pure isotropic Cartesian AMR; no wall-normal or prism layers"
+}

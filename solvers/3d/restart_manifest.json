@@ -1,0 +1,14 @@
+{
+  "executable": "/tmp/quick-cfd-restart/sphere3d",
+  "feature": "same-mesh solution restart; CFL and hold history reset",
+  "verification": "restart_verification.json",
+  "source_sha256": {
+    "local_development/sphere3d/solver.cu": "750d33f4b15585d4157cebc7ea9e8bb8126edc79dc19431304dfaf5665dd7588",
+    "src/sa_model.h": "bd27ae5ba9a1da9b0c797e67c3cc8cd4cc35d68a9123a746ac27ef8768ea525d",
+    "src/low_mach.h": "e124c0edb55dc748d8c6fd1132250c5dbadf02d7a61480b179482cb588a68d1b",
+    "local_development/sphere3d/mesh_format.h": "02ce30df518c9cb9c33b521feb038ad1b27851f1b118b9809074b8363dd85e98"
+  },
+  "executable_sha256": "826594731bfee57698f8f06b50e4171298c1260abe9be4a96648754c3b8a0011",
+  "CRM_load_test_only": true,
+  "additional_CRM_solve_iterations": 0
+}

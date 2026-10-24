@@ -1,0 +1,28 @@
+{
+  "mesh_source": "https://dpw.larc.nasa.gov/DPW4/unstructured_Larc/CellBase/dpw-wbt0_med-10Mc_5.tgz",
+  "cells": 10067380,
+  "faces": 20202123,
+  "gradient": "distance-weighted Green-Gauss",
+  "Mach": 0.85,
+  "AOA_degrees": 2.5,
+  "Re_reference": 5000000,
+  "reference_area_half": 3.9092552169415784,
+  "compute_budget_seconds": 600,
+  "initial_CFL": 0.15,
+  "raw_tolerance": 0.001,
+  "load_change_tolerance": 0.002,
+  "hold": 5,
+  "check_period_iterations": 50,
+  "cold_start": true,
+  "source_archive_sha256": "0ffdbbfe9862f6a5226e78a42c17e22c72db37d9d5ec38fd6dc60fa4b2d465a2",
+  "source_cgns_sha256": "c031af3fd79c3f37c8a9677d0409f7e3f3645bbdf4d07eba4862a0fca64e0341",
+  "executable_sha256": "658699ace7c042e2f122ff61438df9a0facce449149c5dedc7ba71eb4388a096",
+  "moment_reference_chord": [
+    4.807469180565627,
+    0,
+    0.6451776649746193
+  ],
+  "Sutherland_temperature_reference_K": 216.65,
+  "thermal_conductivity": 0,
+  "physics_scope": "Mechanical viscous SA-neg, not full thermal Navier-Stokes; a local development/performance case, not a certified DPW4 reproduction."
+}

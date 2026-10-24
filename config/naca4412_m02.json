@@ -1,0 +1,5 @@
+{
+  "freestream": {"Mach": 0.2, "AOA_degrees": 1.5, "p_Pa": 101325.0, "T_K": 288.15, "chord_m": 1.0},
+  "solver": {"preconditioning": "turkel", "mach_floor": 0.02, "local_pseudo_time": true, "adaptive_cfl": {"enabled": true}, "mode": "steady", "budget_seconds": 180.0, "stop_time_star": 150.0},
+  "output": {"formats": ["npz"]}
+}

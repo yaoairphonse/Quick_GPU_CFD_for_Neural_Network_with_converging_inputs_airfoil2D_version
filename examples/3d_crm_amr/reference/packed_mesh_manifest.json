@@ -1,0 +1,23 @@
+{
+  "format": "QCFDAM1 directory",
+  "blocks": 61482,
+  "procedural_cells": 31478784,
+  "controls": 21523036,
+  "block_interfaces": 207225,
+  "farfield_block_sides": 168,
+  "cut_faces": 7065622,
+  "wall_faces": 5173340,
+  "wall_triangles": 194980,
+  "wall_fragment_triangle_mapping": "wall_triangle.bin int32",
+  "minimum_cut_face_distance": 1.3327421638509307e-06,
+  "minimum_projected_cut_face_distance": -0.0017883075378327673,
+  "cut_faces_using_euclidean_distance": 1011,
+  "minimum_wall_face_distance": 6.301496925436786e-08,
+  "wall_fragments_using_euclidean_distance": 96417,
+  "control_volume_sum": 32762.854185757573,
+  "expected_fluid_volume": 32762.854185757573,
+  "total_bytes": 2028736409,
+  "pack_seconds": 5.091973498994776,
+  "wall_distance": "required separate wall_distance.bin from prepare_amr_wall_distance",
+  "surface_volume": 5.145814242426097
+}

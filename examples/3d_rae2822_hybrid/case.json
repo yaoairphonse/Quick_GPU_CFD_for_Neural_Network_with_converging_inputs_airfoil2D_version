@@ -1,0 +1,28 @@
+{
+  "mesh": {
+    "kind": "one-cell-thick mixed wedge/hexa slab",
+    "span": 0.1,
+    "LF1_cells": 5051,
+    "LF1_wedges": 4721,
+    "LF1_hexahedra": 330,
+    "LF2_cells": 12809
+  },
+  "flow": {
+    "Mach": 0.78,
+    "AOA_degrees": 5.0,
+    "Re_reference": 6500000.0,
+    "mu_inf_star": 1.2e-7,
+    "reference_area": 0.1
+  },
+  "solver": {
+    "integrator": "dplur",
+    "CFL": 0.1,
+    "dplur_sweeps": 5,
+    "dplur_omega": 0.8,
+    "dplur_block_coupling": true,
+    "spatial_order": 1,
+    "SA_convection_order": 1,
+    "fixed_CFL_controller_start_iteration": 1000000,
+    "raw_tolerance": 0.0001
+  }
+}

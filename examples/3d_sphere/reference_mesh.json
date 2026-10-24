@@ -1,0 +1,17 @@
+{
+  "cells": 7680,
+  "faces": 46848,
+  "subdivisions": 8,
+  "radial_layers": 20,
+  "outer_radius": 8.0,
+  "minimum_volume": 0.0006693642883869142,
+  "closure_linf": 9.42055475210265e-16,
+  "volume_balance_error": 3.183231456205249e-12,
+  "wall_area": 12.45090802214555,
+  "analytic_sphere_area": 12.566370614359172,
+  "relative_sphere_area_error": 0.009188221146500974,
+  "inner_volume": 4.110374537322635,
+  "analytic_sphere_volume": 4.1887902047863905,
+  "wall_distance": "radial distance to analytic unit sphere; wall fluxes use the faceted surface",
+  "geometry": "full six-block cubed sphere with closed triangulated polyhedral control volumes; no axisymmetric reduction"
+}

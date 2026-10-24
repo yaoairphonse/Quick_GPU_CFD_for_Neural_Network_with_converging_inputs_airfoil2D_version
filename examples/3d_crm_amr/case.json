@@ -1,0 +1,34 @@
+{
+  "surface_triangles": 194980,
+  "block_cells_per_axis": 8,
+  "base_target_procedural_cells": 10000000,
+  "base_maximum_level": 8,
+  "refinement_sequence": [
+    "base direct-wall AMR",
+    "refine every wall-cut parent once",
+    "refine upper-wing/shock-region parents once with 2:1 closure"
+  ],
+  "final_leaf_blocks": 61482,
+  "final_procedural_cells": 31478784,
+  "final_active_controls": 21523036,
+  "final_cut_cells": 1436726,
+  "final_wall_fragments": 5173340,
+  "final_minimum_spacing_MAC": 0.00390625,
+  "flow": {
+    "Mach": 0.85,
+    "AOA_degrees": 2.5,
+    "Re_reference": 5000000.0,
+    "reference_area_full_model": 7.818510433883157,
+    "moment_reference": [4.807469180565627, 0.0, 0.6451776649746193]
+  },
+  "solver": {
+    "integrator": "dplur",
+    "CFL": 1.0,
+    "dplur_sweeps": 5,
+    "dplur_omega": 0.8,
+    "spatial_order": 2,
+    "reconstruction_blend": 0.5,
+    "SA_convection_order": 1
+  },
+  "status": "geometry and CPU/CUDA audits passed; aerodynamic state unconverged"
+}

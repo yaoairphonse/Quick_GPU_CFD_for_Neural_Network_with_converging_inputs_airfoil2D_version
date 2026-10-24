@@ -112,7 +112,7 @@ inline void flux_hllc(double rhoL, double uL, double pL, double rhoR, double uR,
 }
 
 // ---------------------------------------------------------------------------
-// AUSM+-up（Liou 2006, JCP 214:137-170）。
+// AUSM+-up (Liou 2006, JCP 214:137-170).
 // Split the interface flux into convective mass-flux and pressure terms, each split by Mach number.
 // Recommended constants: Kp=0.25, Ku=0.75, sigma=1, beta=1/8; alpha depends on fa.
 // Mco is the cutoff Mach number, representing the reference/freestream Mach number rather than a tuning parameter.

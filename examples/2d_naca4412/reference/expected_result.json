@@ -1,0 +1,69 @@
+{
+  "reference": {
+    "kind": "XFOIL numerical, free transition",
+    "alpha": 1.5,
+    "Mach": 0.2,
+    "Re_chord": 4660000.0,
+    "CL": 0.6749,
+    "CD": 0.00572,
+    "CDp": 2e-05,
+    "CM": -0.1066
+  },
+  "case": {
+    "Mach": 0.2,
+    "AOA_degrees": 1.5
+  },
+  "stations": {
+    "count": 97,
+    "x_over_c_min": 0.02,
+    "x_over_c_max": 0.98
+  },
+  "levels": {
+    "LF1": {
+      "converged": true,
+      "spatial_order": 2,
+      "fluid_control_volumes": 4718,
+      "steps": 43427,
+      "rejected": 0,
+      "process_seconds": 20.07261914799892,
+      "CL": 0.6644403728239862,
+      "CL_relative_error": -0.01549803997038657,
+      "CM_z_CCW": 0.10786773810159242,
+      "CM_relative_error": 0.011892477500866973,
+      "Cp_rms": 0.012823720056912081,
+      "patches": {
+        "upper": {
+          "Cp_rms": 0.0135017139602966,
+          "Cp_max_abs": 0.03776075053517147
+        },
+        "lower": {
+          "Cp_rms": 0.012107820296421245,
+          "Cp_max_abs": 0.032616827874754256
+        }
+      }
+    },
+    "LF2": {
+      "converged": true,
+      "spatial_order": 2,
+      "fluid_control_volumes": 9517,
+      "steps": 70800,
+      "rejected": 0,
+      "process_seconds": 33.08690891100014,
+      "CL": 0.6629688158002001,
+      "CL_relative_error": -0.017678447473403455,
+      "CM_z_CCW": 0.1071669547864379,
+      "CM_relative_error": 0.005318525201105961,
+      "Cp_rms": 0.011762605331079257,
+      "patches": {
+        "upper": {
+          "Cp_rms": 0.014822702759336623,
+          "Cp_max_abs": 0.03603514420328002
+        },
+        "lower": {
+          "Cp_rms": 0.007550182200306344,
+          "Cp_max_abs": 0.020823469163254484
+        }
+      }
+    }
+  }
+}

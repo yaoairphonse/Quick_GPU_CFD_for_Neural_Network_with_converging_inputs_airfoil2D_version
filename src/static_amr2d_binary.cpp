@@ -50,13 +50,14 @@ int static_amr_binary_mesh(const StaticAmrMesh2D& m,const Params2D& p,const std:
 int static_amr_binary_snapshot(const StaticAmrMesh2D& m,const Params2D& p,const StaticAmrState2D& s,
                                const std::string& prefix,const char* backend,std::string* error) {
   const size_t n=m.cells.size();const size_t nv=m.transport.sa_model?5:4;if(s.u.size()!=nv*n)return failure(error,"snapshot shape mismatch");
+  std::vector<double> wall_pressure;if(static_amr2d_wall_pressure(m,p,s.u,&wall_pressure))return failure(error,"snapshot wall pressure failed");
   double rhomin=INFINITY,rhomax=0,pmin=INFINITY,pmax=0,fx=0,fy=0,mz=0;long double totals[4]={};
   for(size_t k=0;k<n;++k){const double rho=s.u[k],vx=s.u[n+k]/rho,vy=s.u[2*n+k]/rho;
     const double pressure=(p.gamma-1)*(s.u[3*n+k]-.5*rho*(vx*vx+vy*vy));
     if(!std::isfinite(rho)||!(rho>0)||!std::isfinite(pressure)||!(pressure>0))return failure(error,"nonphysical snapshot; no file certified");
     rhomin=std::min(rhomin,rho);rhomax=std::max(rhomax,rho);pmin=std::min(pmin,pressure);pmax=std::max(pmax,pressure);
     for(int v=0;v<4;++v)totals[v]+=static_cast<long double>(m.cells[k].volume)*s.u[v*n+k];
-    const auto& c=m.cells[k];for(size_t q=c.wall_begin;q<c.wall_begin+c.wall_count;++q){const auto& w=m.walls[q];const double x=pressure*w.nx*w.length,y=pressure*w.ny*w.length;fx+=x;fy+=y;mz+=.5*(w.x0+w.x1)*y-.5*(w.y0+w.y1)*x;}
+    const auto& c=m.cells[k];for(size_t q=c.wall_begin;q<c.wall_begin+c.wall_count;++q){const auto& w=m.walls[q];const double x=wall_pressure[q]*w.nx*w.length,y=wall_pressure[q]*w.ny*w.length;fx+=x;fy+=y;mz+=.5*(w.x0+w.x1)*y-.5*(w.y0+w.y1)*x;}
   }
   if(static_amr_write_npy(prefix+".state.npy",s.u.data(),nv,n,error))return 1;
   std::ofstream out(prefix+".json");out<<std::setprecision(17)<<"{\"backend\":\""<<backend<<"\",\"time\":"<<s.time<<",\"steps\":"<<s.steps<<",\"rejected\":"<<s.rejected

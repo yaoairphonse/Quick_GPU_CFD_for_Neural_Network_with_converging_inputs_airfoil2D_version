@@ -1,0 +1,77 @@
+{
+  "mesh_name": "amr_upperwing_l10",
+  "state_name": "state.bin",
+  "provenance": "Large mesh and state are external cache artifacts and are not bundled.",
+  "sampling": "direct QCFDAM1 leaf-cell raster; no scattered interpolation",
+  "planes": {
+    "crm_xz_symmetry_mach_cp.png": {
+      "axis": 1,
+      "station": 1e-06,
+      "bounds": [
+        [
+          -1.0,
+          11.5
+        ],
+        [
+          -1.0,
+          3.0
+        ]
+      ],
+      "resolution": [
+        1800,
+        720
+      ],
+      "surface_intersection_segments": 877,
+      "surface_intersection_polylines": 878,
+      "uncovered_domain_pixels": 0,
+      "unfilled_fluid_pixels": 0,
+      "solid_pixels": 176378
+    },
+    "crm_xy_wing_mach_cp.png": {
+      "axis": 2,
+      "station": 0.8,
+      "bounds": [
+        [
+          -1.0,
+          11.5
+        ],
+        [
+          -5.5,
+          5.5
+        ]
+      ],
+      "resolution": [
+        1600,
+        1408
+      ],
+      "surface_intersection_segments": 1356,
+      "surface_intersection_polylines": 1356,
+      "uncovered_domain_pixels": 0,
+      "unfilled_fluid_pixels": 0,
+      "solid_pixels": 112828
+    },
+    "crm_yz_fullwing_mach_cp.png": {
+      "axis": 0,
+      "station": 5.0,
+      "bounds": [
+        [
+          -3.0,
+          3.0
+        ],
+        [
+          0.0,
+          1.65
+        ]
+      ],
+      "resolution": [
+        1500,
+        540
+      ],
+      "surface_intersection_segments": 626,
+      "surface_intersection_polylines": 626,
+      "uncovered_domain_pixels": 0,
+      "unfilled_fluid_pixels": 0,
+      "solid_pixels": 80853
+    }
+  }
+}

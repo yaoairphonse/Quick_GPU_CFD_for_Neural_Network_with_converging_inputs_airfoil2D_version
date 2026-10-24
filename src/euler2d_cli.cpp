@@ -49,7 +49,7 @@ static void usage() {
       "  [--backend cpu|cuda]  (CUDA: fp64 first-order regular or cut-cell+SRD)\n"
       "  [--no-output]         run without writing the field CSV (scaling gate)\n"
       "  [--restart field.csv --t0 T]  bilinear nested-grid initialization\n"
-      "  body：--problem body --freestream rho,u,v,p --body circle:cx,cy,R | wedge:x0,y0,len,halfangle_deg\n"
+      "  body: --problem body --freestream rho,u,v,p --body circle:cx,cy,R | wedge:x0,y0,len,halfangle_deg\n"
       "        | naca:t,aoa_deg,x0,y0,chord | polygon:path.csv\n"
       "        [--wall ib|cut] [--npoly M] [--wall-out wall.csv]\n"
       "        cut: [--surface-out surface.vtp] [--surface-integrals loads.csv]\n"

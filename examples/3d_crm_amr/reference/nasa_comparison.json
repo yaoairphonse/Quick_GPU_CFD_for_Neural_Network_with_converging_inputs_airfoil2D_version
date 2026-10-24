@@ -1,0 +1,34 @@
+{
+  "reference": "NASA USM3D computed CFD, original WBT0",
+  "coefficients": {
+    "CL": {
+      "local": 0.5047447089157848,
+      "NASA_USM3D": 0.54239,
+      "relative_error_percent": -6.940631479971093
+    },
+    "CD": {
+      "local": 0.026189247998289596,
+      "NASA_USM3D": 0.02995,
+      "relative_error_percent": -12.556767952288498
+    },
+    "CM_y": {
+      "local": -0.10253302957916291,
+      "NASA_USM3D": -0.06249,
+      "relative_error_percent": -64.0790999826579
+    }
+  },
+  "surface_sampling": "nearest NASA half-model node to mirrored source-triangle centroid",
+  "matched_area_fraction_within_0p005_MAC": 0.16983844496929587,
+  "matched_area_fraction_within_0p02_MAC": 0.8430767406498079,
+  "median_match_distance_MAC": 0.0045029542624089565,
+  "maximum_match_distance_MAC": 0.03907477617595284,
+  "whole_surface_area_weighted_Cp_RMSE": 0.14405375740049298,
+  "whole_surface_nearest_Cp_RMSE_without_distance_filter": 0.13488135662891618,
+  "whole_surface_Cp_RMSE_within_0p02_MAC": 0.13539335942698705,
+  "wing_area_weighted_Cp_RMSE": 0.160295687741532,
+  "wing_upper_Cp_RMSE": 0.20904418956470266,
+  "wing_lower_Cp_RMSE": 0.09667743596926005,
+  "matched_triangles": 105904,
+  "wing_triangles": 49762,
+  "converged": false
+}
