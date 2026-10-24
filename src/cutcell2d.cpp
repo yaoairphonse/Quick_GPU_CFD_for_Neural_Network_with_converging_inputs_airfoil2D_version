@@ -347,7 +347,7 @@ int cut2d_build_polygon(const Solver2D* s, const double* px, const double* py, i
       const double x0 = g.xf[i], x1 = g.xf[i + 1], y0 = g.yf[j], y1 = g.yf[j + 1];
       if (x1 < pminx || x0 > pmaxx || y1 < pminy || y0 > pmaxy) continue;
       double Awx = 0.0, Awy = 0.0, wL = 0.0, wxm = 0.0, wym = 0.0;
-      double A = 0.0, MX = 0.0, MY = 0.0;  // Boundary-integral area and first moments.
+      double A = 0.0, MX = 0.0, MY = 0.0;  // A = ∮x dy，MX = 1/2∮x² dy，MY = -1/2∮y² dx
       bool has_wall = false;
       const size_t fragment_begin = cut->wall_fragments.size();
       for (int a = 0, b0 = n - 1; a < n; b0 = a++) {  // Edge b0 -> a.
@@ -805,7 +805,7 @@ void cut2d_residual(const Solver2D* s, const double* U, double* R, double* W, do
 }
 
 // ---------------------------------------------------------------------------
-// State redistribution (Berger and Giuliani, 2020).
+// SRD（Berger & Giuliani 2020）
 // ---------------------------------------------------------------------------
 void cut2d_srd(const Solver2D* s, double* U) {
   const Cut2D& ct = *s->cut;
@@ -820,7 +820,7 @@ void cut2d_srd(const Solver2D* s, double* U) {
 
   for (int c = 0; c < s->ncase; ++c) {
     double* Uc = U + static_cast<size_t>(c) * NVAR2D * cells;
-    // 1) Form the neighborhood state Q-hat.
+    // 1) Q̂
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) if(ns >= 64)
 #endif

@@ -1,9 +1,7 @@
 // Static, face-balanced leaf mesh; one shared flux per physical subface.
 #include "static_amr2d.h"
-#include "static_amr2d_reconstruction.h"
 #include "static_amr2d_sa.h"
 #include "flux.h"
-#include "low_mach.h"
 #include <algorithm>
 #include <cmath>
 #include <climits>
@@ -160,16 +158,14 @@ bool residual(const StaticAmrMesh2D& m,const Params2D& p,const std::vector<doubl
               std::vector<double>* speed,std::vector<double>* viscous_dt=nullptr) {
   const size_t n=m.cells.size(),nf=m.faces.size();
   if(!primitive(u,n,p.gamma,w))return false;
-  std::vector<double> slopes;
-  if(p.amr_spatial_order==2)static_amr2d_reconstruct(m,*w,&slopes);
   flux->resize(4*nf);speed->resize(nf);r->resize(4*n);int bad=0;
   #pragma omp parallel for reduction(|:bad)
   for(size_t q=0;q<nf;++q) {
     const auto& f=m.faces[q];const int inside=f.left>=0?f.left:f.right;
     double a[4],b[4];
     for(int v=0;v<4;++v) {
-      a[v]=p.amr_spatial_order==2&&f.left>=0?amr_point_value(w->data(),slopes.data(),n,v,f.left,m.cells[f.left],amr_face_x(f),amr_face_y(f)):(*w)[v*n+(f.left>=0?f.left:inside)];
-      b[v]=p.amr_spatial_order==2&&f.right>=0?amr_point_value(w->data(),slopes.data(),n,v,f.right,m.cells[f.right],amr_face_x(f),amr_face_y(f)):(*w)[v*n+(f.right>=0?f.right:inside)];
+      a[v]=(*w)[v*n+(f.left>=0?f.left:inside)];
+      b[v]=(*w)[v*n+(f.right>=0?f.right:inside)];
     }
     if(f.boundary>=0) {
       double* outside=f.left<0?a:b;const double* interior=f.left<0?b:a;
@@ -178,18 +174,12 @@ bool residual(const StaticAmrMesh2D& m,const Params2D& p,const std::vector<doubl
     const int normal=1+f.axis,tangent=2-f.axis;double local[4];
     const int bc=f.boundary<0?-1:(m.boundaries[f.boundary].kind<0?p.bc[f.boundary]:m.boundaries[f.boundary].kind);
     if(bc==AMR_BC_NOSLIP){local[0]=0;local[1]=(*w)[3*n+inside];local[2]=0;local[3]=0;}
-    else if(p.low_mach_preconditioning){
-      const double al[5]={a[0],a[normal],a[tangent],0,a[3]},br[5]={b[0],b[normal],b[tangent],0,b[3]},nn[3]={1,0,0};double f5[5];
-      lm_flux(al,br,nn,p.gamma,p.low_mach_reference,p.low_mach_floor,f5);
-      local[0]=f5[0];local[1]=f5[1];local[2]=f5[2];local[3]=f5[4];
-    }
     else if(p.flux==FLUX_HLLC)flux_hllc_t(a[0],a[normal],a[tangent],a[3],b[0],b[normal],b[tangent],b[3],p.gamma,local);
     else flux_ausmpup_t(a[0],a[normal],a[tangent],a[3],b[0],b[normal],b[tangent],b[3],p.gamma,p.ausm_mco,local);
     (*flux)[q]=local[0]*f.length;(*flux)[normal*nf+q]=local[1]*f.length;
     (*flux)[tangent*nf+q]=local[2]*f.length;(*flux)[3*nf+q]=local[3]*f.length;
     (*speed)[q]=std::max(std::fabs(a[normal])+std::sqrt(p.gamma*a[3]/a[0]),
                          std::fabs(b[normal])+std::sqrt(p.gamma*b[3]/b[0]));
-    if(p.low_mach_preconditioning)(*speed)[q]=lm_face_speed(a,b,normal,3,p.gamma,p.low_mach_reference,p.low_mach_floor);
     for(double value:local)if(!std::isfinite(value))bad=1;
   }
   if(bad)return false;
@@ -201,8 +191,7 @@ bool residual(const StaticAmrMesh2D& m,const Params2D& p,const std::vector<doubl
       for(int v=0;v<4;++v)sum[v]+=sign*(*flux)[v*nf+face];
     }
     for(size_t q=c.wall_begin;q<c.wall_begin+c.wall_count;++q) {
-      const auto& wall=m.walls[q];const double pressure=p.amr_spatial_order==2?amr_point_value(w->data(),slopes.data(),n,3,k,c,amr_wall_x(wall),amr_wall_y(wall)):(*w)[3*n+k];
-      sum[1]+=pressure*wall.nx*wall.length;sum[2]+=pressure*wall.ny*wall.length;
+      const auto& wall=m.walls[q];sum[1]+=(*w)[3*n+k]*wall.nx*wall.length;sum[2]+=(*w)[3*n+k]*wall.ny*wall.length;
     }
     for(int v=0;v<4;++v)(*r)[v*n+k]=-sum[v]/c.volume;
   }
@@ -236,34 +225,6 @@ void redistribute(const StaticAmrMesh2D& m,std::vector<double>* u,std::vector<do
   u->swap(*out);
 }
 } // namespace
-
-void static_amr2d_reconstruct(const StaticAmrMesh2D& m,const std::vector<double>& w,std::vector<double>* slopes) {
-  const size_t n=m.cells.size();slopes->assign(8*n,0);
-  #pragma omp parallel for
-  for(size_t k=0;k<n;++k){const auto& c=m.cells[k];
-    for(int v=0;v<4;++v){const double center=w[v*n+k];double gx=0,gy=0,lower=center,upper=center;
-      for(size_t pos=m.reconstruction_offsets[k];pos<m.reconstruction_offsets[k+1];++pos){const auto& t=m.reconstruction_terms[pos];const double other=w[v*n+t.neighbor],diff=other-center;
-        gx+=t.x*diff;gy+=t.y*diff;lower=std::min(lower,other);upper=std::max(upper,other);}
-      if(v==0||v==3)lower=std::max(lower,.1*center);
-      double theta=1;
-      for(size_t pos=m.face_offsets[k];pos<m.face_offsets[k+1];++pos){const auto& f=m.faces[m.cell_faces[pos]];
-        theta=std::min(theta,amr_limiter(center,lower,upper,gx*(amr_face_x(f)-c.cx)+gy*(amr_face_y(f)-c.cy)));}
-      for(size_t pos=c.wall_begin;pos<c.wall_begin+c.wall_count;++pos){const auto& wall=m.walls[pos];
-        theta=std::min(theta,amr_limiter(center,lower,upper,gx*(amr_wall_x(wall)-c.cx)+gy*(amr_wall_y(wall)-c.cy)));}
-      (*slopes)[2*v*n+k]=theta*gx;(*slopes)[(2*v+1)*n+k]=theta*gy;
-    }
-  }
-}
-
-int static_amr2d_wall_pressure(const StaticAmrMesh2D& m,const Params2D& p,const std::vector<double>& u,std::vector<double>* pressure) {
-  const size_t n=m.cells.size();if(!pressure||u.size()<(m.transport.sa_model?5:4)*n)return 1;
-  std::vector<double> w,slopes;if(!primitive(u,n,p.gamma,&w))return 1;
-  if(p.amr_spatial_order==2)static_amr2d_reconstruct(m,w,&slopes);
-  pressure->resize(m.walls.size());
-  for(size_t q=0;q<m.walls.size();++q){const auto& wall=m.walls[q];const size_t k=wall.owner_cell;
-    (*pressure)[q]=p.amr_spatial_order==2?amr_point_value(w.data(),slopes.data(),n,3,k,m.cells[k],amr_wall_x(wall),amr_wall_y(wall)):w[3*n+k];}
-  return 0;
-}
 
 int static_amr2d_build(const StaticAmrOptions2D& o,const std::vector<double>& px,
                        const std::vector<double>& py,const std::vector<int>& patches,
@@ -387,20 +348,6 @@ int static_amr2d_build(const StaticAmrOptions2D& o,const std::vector<double>& px
   for(size_t k=0;k<n;++k)m->face_offsets[k+1]+=m->face_offsets[k];
   m->cell_faces.resize(m->face_offsets.back());auto cursor=m->face_offsets;
   for(size_t q=0;q<m->faces.size();++q){const auto& f=m->faces[q];if(f.left>=0)m->cell_faces[cursor[f.left]++]=q;if(f.right>=0)m->cell_faces[cursor[f.right]++]=q;}
-  m->reconstruction_offsets.reserve(n+1);m->reconstruction_offsets.push_back(0);
-  for(size_t k=0;k<n;++k){
-    const auto& c=m->cells[k];std::vector<int> neighbors;
-    for(size_t pos=m->face_offsets[k];pos<m->face_offsets[k+1];++pos){const auto& f=m->faces[m->cell_faces[pos]];
-      const int other=f.left==static_cast<int>(k)?f.right:f.left;if(other>=0)neighbors.push_back(other);}
-    std::sort(neighbors.begin(),neighbors.end());neighbors.erase(std::unique(neighbors.begin(),neighbors.end()),neighbors.end());
-    double xx=0,xy=0,yy=0;
-    for(int other:neighbors){const double dx=m->cells[other].cx-c.cx,dy=m->cells[other].cy-c.cy,d2=dx*dx+dy*dy;
-      if(!(d2>0))return invalid("coincident reconstruction centers");xx+=dx*dx/d2;xy+=dx*dy/d2;yy+=dy*dy/d2;}
-    const double det=xx*yy-xy*xy;
-    if(det>1e-12*(xx+yy)*(xx+yy))for(int other:neighbors){const double dx=m->cells[other].cx-c.cx,dy=m->cells[other].cy-c.cy,d2=dx*dx+dy*dy;
-      m->reconstruction_terms.push_back({other,(yy*dx-xy*dy)/(det*d2),(xx*dy-xy*dx)/(det*d2)});}
-    m->reconstruction_offsets.push_back(m->reconstruction_terms.size());
-  }
   for(size_t k=0;k<n;++k) {
     const auto& c=m->cells[k];double closure[2]={};
     for(size_t q=m->face_offsets[k];q<m->face_offsets[k+1];++q){const auto& f=m->faces[m->cell_faces[q]];closure[f.axis]+=(f.left==static_cast<int>(k)?1:-1)*f.length;}
@@ -438,52 +385,40 @@ int static_amr2d_run(const StaticAmrMesh2D& m,const Params2D& p,double tend,long
   const auto invalid=[&](const std::string& message){fail(error,message);return 1;};
   if(!static_amr2d_viscous_ready(m)||!s||m.cells.empty()||s->u.size()!=(m.transport.sa_model?5:4)*m.cells.size()||!std::isfinite(s->time)||s->time<0||!std::isfinite(tend)||tend<s->time||maxsteps<1||
      !(p.gamma>1)||!std::isfinite(p.gamma)||!(p.cfl>0)||p.cfl>0.5||!std::isfinite(p.dt_fixed)||p.dt_fixed<0||
-     !std::isfinite(p.ausm_mco)||p.ausm_mco<=0||p.time_integrator!=TIME_SSP_RK3||(p.amr_spatial_order!=1&&p.amr_spatial_order!=2)||
+     !std::isfinite(p.ausm_mco)||p.ausm_mco<=0||p.time_integrator!=TIME_SSP_RK3||p.limiter!=LIM_FIRST_ORDER||
      (p.flux!=FLUX_HLLC&&p.flux!=FLUX_AUSMPUP))return invalid("static AMR requires first-order RK3, valid state/options and CFL <= 0.5");
   for(int side=0;side<4;++side)if(!amr_bc_valid(m.boundaries[side],p.bc[side],side))return invalid("invalid AMR boundary configuration");
-  const size_t n=m.cells.size();std::vector<double> r,w,flux,speed,u1((m.transport.sa_model?5:4)*n),u2((m.transport.sa_model?5:4)*n),groups,out,base_r,viscous_dt,local_dt(n);
-  const auto precondition=[&](const std::vector<double>& state){if(!p.low_mach_preconditioning)return;
-    for(size_t k=0;k<n;++k){double rr[5],ww[5]={w[k],w[n+k],w[2*n+k],w[3*n+k],m.transport.sa_model?state[4*n+k]/w[k]:0};
-      for(int v=0;v<(m.transport.sa_model?5:4);++v)rr[v]=r[v*n+k];
-      lm_apply(rr,ww,p.gamma,p.low_mach_reference,p.low_mach_floor,2,m.transport.sa_model);
-      for(int v=0;v<(m.transport.sa_model?5:4);++v)r[v*n+k]=rr[v];}};
+  const size_t n=m.cells.size();std::vector<double> r,w,flux,speed,u1((m.transport.sa_model?5:4)*n),u2((m.transport.sa_model?5:4)*n),groups,out,base_r,viscous_dt;
   while(s->time<tend) {
     if(s->steps>=maxsteps)return invalid("maxsteps reached before tend");
     if(!residual(m,p,s->u,&r,&w,&flux,&speed,&viscous_dt))return invalid("nonphysical base state or nonfinite face flux");
     double dt=p.dt_fixed>0?p.dt_fixed:std::numeric_limits<double>::infinity();
-    std::fill(local_dt.begin(),local_dt.end(),dt);
     if(p.dt_fixed==0)for(size_t k=0;k<n;++k) {
       const auto& c=m.cells[k];double spectral=0;
       for(size_t q=m.face_offsets[k];q<m.face_offsets[k+1];++q){const size_t f=m.cell_faces[q];spectral+=speed[f]*m.faces[f].length;}
       const double a=std::sqrt(p.gamma*w[3*n+k]/w[k]);
-      const double wall_a=p.low_mach_preconditioning?a*std::sqrt(lm_beta2(w[n+k]*w[n+k]+w[2*n+k]*w[2*n+k],a*a,p.low_mach_reference,p.low_mach_floor)):a;
-      for(size_t q=c.wall_begin;q<c.wall_begin+c.wall_count;++q)spectral+=wall_a*m.walls[q].length;
-      if(spectral>0)local_dt[k]=p.cfl*(m.options.agglomerate_small?c.volume:(c.x1-c.x0)*(c.y1-c.y0))/spectral;
-      if(m.transport.model==AMR_MODEL_LAMINAR)local_dt[k]=std::min(local_dt[k],viscous_dt[k]);
-      dt=std::min(dt,local_dt[k]);
+      for(size_t q=c.wall_begin;q<c.wall_begin+c.wall_count;++q)spectral+=a*m.walls[q].length;
+      if(spectral>0)dt=std::min(dt,p.cfl*(m.options.agglomerate_small?c.volume:(c.x1-c.x0)*(c.y1-c.y0))/spectral);
     }
     if(p.dt_fixed==0&&m.transport.model==AMR_MODEL_LAMINAR)for(double value:viscous_dt)dt=std::min(dt,value);
-    const double base_dt=dt;
     const double remaining=tend-s->time;
     dt=std::min(dt,remaining);
     // A roundoff-sized final remainder must not trigger another SRD projection.
     const double time_tol=32*std::numeric_limits<double>::epsilon()*std::max({std::fabs(tend),std::fabs(s->time),dt});
     if(remaining-dt<=time_tol)dt=remaining;
-    precondition(s->u);base_r=r;bool accepted=false;
+    base_r=r;bool accepted=false;
     for(int attempt=0;attempt<21;++attempt) {
       if(!std::isfinite(dt)||!(dt>0)||s->time+dt==s->time)return invalid("physical time step underflow");
-      for(size_t q=0;q<s->u.size();++q)u1[q]=s->u[q]+dt*(p.local_pseudo_time?local_dt[q%n]/base_dt:1)*base_r[q];
+      for(size_t q=0;q<s->u.size();++q)u1[q]=s->u[q]+dt*base_r[q];
       redistribute(m,&u1,&groups,&out);
       bool ok=residual(m,p,u1,&r,&w,&flux,&speed);
       if(ok) {
-        precondition(u1);
-        for(size_t q=0;q<s->u.size();++q)u2[q]=0.75*s->u[q]+0.25*(u1[q]+dt*(p.local_pseudo_time?local_dt[q%n]/base_dt:1)*r[q]);
+        for(size_t q=0;q<s->u.size();++q)u2[q]=0.75*s->u[q]+0.25*(u1[q]+dt*r[q]);
         redistribute(m,&u2,&groups,&out);
         ok=residual(m,p,u2,&r,&w,&flux,&speed);
       }
       if(ok) {
-        precondition(u2);
-        for(size_t q=0;q<s->u.size();++q)u1[q]=s->u[q]/3+(2.0/3)*(u2[q]+dt*(p.local_pseudo_time?local_dt[q%n]/base_dt:1)*r[q]);
+        for(size_t q=0;q<s->u.size();++q)u1[q]=s->u[q]/3+(2.0/3)*(u2[q]+dt*r[q]);
         redistribute(m,&u1,&groups,&out);
         ok=primitive(u1,n,p.gamma,&w);
         if(m.transport.sa_model)for(size_t k=0;k<n;++k)ok=ok&&std::isfinite(u1[4*n+k]);

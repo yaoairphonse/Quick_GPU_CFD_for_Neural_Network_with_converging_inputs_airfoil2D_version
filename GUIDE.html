@@ -1,0 +1,410 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quick CFD for NNLCI: Airfoil Pipeline Guide</title>
+<style>:root{--ink:#183747;--green:#087c68}body{font:16px/1.85 system-ui;color:var(--ink);background:#f1f5f7;margin:auto;max-width:1220px;padding:24px}h1,h2,h3{line-height:1.4}h2{color:var(--green)}section{background:white;border-radius:12px;padding:26px;margin:20px 0}nav{display:flex;gap:14px;flex-wrap:wrap}a{color:#006b9c}table{border-collapse:collapse;width:100%;font-size:14px}td,th{padding:9px;border-bottom:1px solid #dce4e7;text-align:left;vertical-align:top}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#edf3f5;border-radius:8px;padding:16px;line-height:1.6}code{background:#edf3f5;padding:2px 5px}.eq{font:16px/1.9 ui-monospace,monospace;white-space:pre-wrap}.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.step{background:#e2f2ed;padding:14px;border-radius:8px}.note{background:#fff3db;padding:14px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}img{width:100%;background:white}label{display:inline-flex;gap:6px;align-items:center;margin:6px}input,select,button{font:inherit;padding:5px}input{width:100px}button{cursor:pointer}textarea{box-sizing:border-box;width:100%;min-height:360px;font:14px/1.5 ui-monospace,monospace;padding:14px}.scroll{overflow:auto}@media(max-width:750px){.steps,.grid{grid-template-columns:1fr}section{padding:18px}}</style>
+<h1>Airfoil Points → LF1 / LF2 → Quick CFD → NNLCI Data</h1>
+<p>Standalone package: <code>quick_CFD_for_NNLCI_airfoil_opt_case</code> · x–y plane · counterclockwise-positive Mz · English edition, 2026-10-23</p>
+<nav><a href="#start">Getting started</a><a href="#input">Input</a><a href="#mesh">Meshing</a><a href="#equations">Equations</a><a href="#scheme">Numerical methods</a><a href="#wall">Boundaries</a><a href="#sa">SA model</a><a href="#time">Time and convergence</a><a href="#output">Outputs and loads</a><a href="#flows">Flow gallery</a><a href="#editor">Configuration editor</a><a href="#roadmap">Development roadmap</a><a href="#validation">Validation</a></nav>
+<section id="start"><h2>1. Run your first case</h2>
+<div class="steps"><div class="step"><b>1. Input</b><br>GXXX x,y CSV<br>Reorder points without moving the shape</div><div class="step"><b>2. Quick meshing</b><br>LF1 / LF2<br>AMR, cut cells, conservative merging</div><div class="step"><b>3. Solver</b><br>HLLC / SSP-RK3<br>Laminar or SA-neg</div><div class="step"><b>4. Output</b><br>SI fields, surfaces, and loads<br>CSV and uncompressed NPZ</div></div>
+<pre>cd quick_CFD_for_NNLCI_airfoil_opt_case
+python3 -m pip install -r requirements.txt
+python3 quick_cfd.py build
+python3 quick_cfd.py run --points examples/G0001_airfoil_points.csv --out runs/my_airfoil</pre>
+<p>Open <code>runs/my_airfoil/index.html</code>. Both LF1 and LF2 run by default, each starting independently from uniform freestream at t=0. There is no coarse-grid warm start. Generated runs and build products are local artifacts; they are excluded from Git. The <a href="#flows">flow gallery</a> includes figures from a completed G0001 run.</p>
+<p>Requirements: Python 3.9+, NumPy, CMake 3.18+, and C++17. GPU execution also requires the CUDA Toolkit and a compatible NVIDIA GPU. Architecture 89 defaults to the RTX 4090 used in the original measurements. Specify the architecture for other GPUs, for example <code>python3 quick_cfd.py build --cuda-arch 86</code>.</p>
+<pre># CPU build without CUDA
+python3 quick_cfd.py build --cpu
+python3 quick_cfd.py run --backend cpu --points examples/G0001_airfoil_points.csv --mode time --stop-time .01
+# Generate both meshes and geometry tables only
+python3 quick_cfd.py mesh --points examples/G0001_airfoil_points.csv --out runs/mesh_only
+# Save a complete configuration, then customize it
+python3 quick_cfd.py init-config --out my_config.json
+python3 quick_cfd.py run --points examples/G0001_airfoil_points.csv --config my_config.json</pre>
+<p>After moving the package, the build command renames and preserves any CMake build directory tied to the old location, then configures a fresh build. It does not depend on a parent project. Absolute paths in historical <code>command.json</code> files record the original invocation.</p>
+<p>The output directory must be new or empty. A <code>run</code> invocation builds and directly uses its mesh within one solver process. The <code>mesh</code> command provides an independent geometry preview; a subsequent run rebuilds the mesh because no mesh-cache loader is provided.</p></section>
+<section id="input"><h2>2. Point format and geometry processing</h2>
+<pre>x,y
+3.605044470E-01,-3.990721966E-02
+...</pre>
+<p>Use the supplied GXXX format: an x,y header, two finite numeric columns, x/c between 0 and 1, one leading-edge point at x=0, paired upper/lower points at each interior x, and at least two distinct vertical trailing-edge points at x=1. Rows need not follow the contour; the original samples may be sorted by y. Filenames such as GXXXX_airfoil_points.csv are optional; validation uses the coordinates.</p>
+<p><code>pipeline/geometry.py</code> pairs identical x coordinates, follows the upper surface from trailing edge to leading edge, follows the lower surface back, and closes the original vertical trailing edge. It preserves all points without smoothing or resampling. Duplicate points, missing pairs, or incompatible formats are rejected. Arbitrary point clouds, repeated NACA closure points, and sharp trailing edges require conversion first; the reader does not infer their topology.</p>
+<p>Input coordinates are <b>x/c and y/c</b>. <code>chord_m</code> sets the physical scale: with c=0.5 m, x/c=1 corresponds to 0.5 m. Changing angle of attack rotates the freestream velocity while preserving geometry and mesh coordinates. Patches are 1=upper, 2=lower, 3=vertical trailing edge. Each cut-wall fragment retains its source_edge and patch.</p>
+<p>Each run stores the input copy, reordered polygon, patches, and SHA-256 hashes in <code>geometry/</code>.</p></section>
+<section id="mesh"><h2>3. Parameterized meshing: LF1 and LF2</h2>
+<p>A static Cartesian quadtree starts from rectangular background cells. A cell splits into four children when it satisfies the wall-distance criterion, or intersects a refinement box and remains below its requested level. Neighboring cells are then balanced 2:1. Each physical subface at a coarse/fine interface has one shared flux. The grid remains fixed throughout the solve, with no local subcycling.</p>
+<div class="scroll"><table><tr><th>Parameter</th><th>LF1</th><th>LF2</th><th>Meaning</th></tr><tr><td>bounds_xy_c</td><td colspan="2">[-7,14,-10,10]</td><td>Bounds in chord units</td></tr><tr><td>base_shape</td><td colspan="2">[42,40]</td><td>Background cells of 0.5c × 0.5c</td></tr><tr><td>levels</td><td>5</td><td>6</td><td>Maximum refinement; background is level 0</td></tr><tr><td>wall_buffer</td><td colspan="2">4</td><td>Distance criterion below</td></tr><tr><td>Minimum h/c</td><td>1/64</td><td>1/128</td><td>For these square background cells</td></tr><tr><td>Measured fluid CVs</td><td>4668–4725</td><td>9433–9533</td><td>Varies with geometry; not a fixed count target</td></tr></table></div>
+<pre class="eq">h_x(level) = (xmax − xmin) / nx / 2^level
+h_y(level) = (ymax − ymin) / ny / 2^level
+Wall refinement: distance(rectangle, polygon) ≤ buffer × 0.5 × min(h_x,h_y)
+Also refine when a rectangle intersects a box and level &lt; box.level.</pre>
+<p>With buffer=4, the distance threshold is 2h at the current cell scale, rather than a fixed thickness of 4c. Sufficient buffering keeps cut cells on one fine level, avoiding complex cut faces at coarse/fine interfaces.</p>
+<table><tr><th>Refinement box [xmin,xmax,ymin,ymax,level]</th><th>LF1</th><th>LF2</th></tr><tr><td>Airfoil / trailing edge</td><td>[-.5,2,-.75,.75,3]</td><td>[-.5,2,-.75,.75,4]</td></tr><tr><td>Wake</td><td colspan="2">[1,4,-.35,.65,3]</td></tr><tr><td>Intermediate region</td><td colspan="2">[-2,6,-3,3,1]</td></tr><tr><td>Extra fine wake</td><td>None</td><td>[2,3.25,-.35,.65,4]</td></tr></table>
+<div class="grid"><div><h3>LF1 background members</h3><img src="docs/assets/LF1_mesh.svg" alt="LF1 background member mesh"></div><div><h3>LF2 background members</h3><img src="docs/assets/LF2_mesh.svg" alt="LF2 background member mesh"></div></div>
+<p>These previews show background member rectangles masked by the original airfoil, rather than exact fluid cut polygons. Integration uses the actual geometry below.</p>
+<h3>3.1 Cut-cell geometry</h3><pre class="eq">V_i = ∫_(cell ∩ fluid) dA
+x̄_i = (1/V_i) ∫_(cell ∩ fluid) x dA
+Cartesian faces retain fluid aperture length A_f and aperture centroid.
+Wall fragments retain endpoints, length ℓ_w, normal n_w from fluid into solid, patch, and source_edge.
+Geometric closure: Σ_f A_f n_if + Σ_w ℓ_w n_w = 0</pre>
+<p>Disconnected fluid pieces in one background cell receive separate CVs; connectivity follows actual apertures. A grid line coincident with a vertical trailing edge closes the correct opening and assigns the wall to the fluid side without translating the airfoil.</p>
+<h3>3.2 Conservative merging of small CVs</h3><p>A CV with less than half its background-cell area preferentially merges with a connected fluid CV at the same level through its largest positive aperture. Internal faces disappear, wall fragments remain, and volumes and first area moments add. Merging cannot cross solid. Missing valid neighbors cause an error.</p>
+<pre class="eq">V_merge = Σ_i V_i
+x̄_merge = (Σ_i V_i x̄_i) / V_merge
+Shared internal fluxes cancel: F_f A_f − F_f A_f = 0</pre>
+<p>The pipeline uses agglomerated finite volumes and actual fluid volumes for CFL control, rather than per-stage state redistribution. Using an enclosing rectangle area in place of V would change the method, so output retains member mappings.</p>
+<p><code>mesh.max_cells</code> caps background refinement. Its default of two million is a protective limit, not a requested count. Larger levels or boxes increase cost; timings for the approximately 4,700/9,500-CV examples do not extrapolate directly.</p></section>
+<section id="equations"><h2>4. Compressible equations and physical units</h2>
+<h3>4.1 Mean-flow conservation</h3><pre class="eq">U = [ρ, ρu, ρv, ρE]ᵀ
+∂U/∂t + ∂F_c/∂x + ∂G_c/∂y = ∂F_v/∂x + ∂G_v/∂y
+F_c = [ρu, ρu²+p, ρuv, u(ρE+p)]ᵀ
+G_c = [ρv, ρuv, ρv²+p, v(ρE+p)]ᵀ
+p = (γ−1) [ρE − ½ρ(u²+v²)]
+T = p/(ρR), a = √(γp/ρ), Mach = √(u²+v²)/a</pre>
+<p>The density-based method directly advances conserved variables and recovers pressure and temperature through the equation of state. T∞ and p∞ are static freestream quantities. Angle of attack α sets u∞=Ma∞cosα and v∞=Ma∞sinα; output coordinates do not rotate.</p>
+<h3>4.2 Newtonian stress and viscous work</h3><pre class="eq">μ_eff = μ + μ_t
+τ_xx = μ_eff [2u_x − ⅔(u_x+v_y)]
+τ_yy = μ_eff [2v_y − ⅔(u_x+v_y)]
+τ_xy = μ_eff (u_y+v_x)
+F_v = [0, τ_xx, τ_xy, uτ_xx+vτ_xy]ᵀ
+G_v = [0, τ_xy, τ_yy, uτ_xy+vτ_yy]ᵀ</pre>
+<p>Laminar flow uses μ_t=0. SA-neg contributes eddy viscosity to momentum and energy viscous work. Thermal conductivity κ=0: <b>molecular and turbulent Fourier heat fluxes are absent</b>. Temperature still changes through compression, expansion, and viscous work; this is not an isothermal model.</p>
+<h3>4.3 Sutherland and constant viscosity</h3><pre class="eq">μ(T) = μ₀ (T/T₀)^(3/2) (T₀+S)/(T+S)
+μ₀=1.716×10⁻⁵ Pa·s, T₀=273.15 K, S=110.4 K</pre>
+<p><code>viscosity=sutherland</code> updates viscosity in every cell at every RK stage. <code>constant</code> uses the Sutherland value at T∞ or an explicit <code>constant_mu_Pa_s</code>. Turbulence and viscosity-law switches are independent. Background: <a href="https://www.grc.nasa.gov/www/k-12/airplane/viscosity.html">NASA Glenn</a>; its temperature convention is Rankine, while this configuration uses kelvin.</p>
+<h3>4.4 Internal nondimensionalization and SI output</h3><pre class="eq">ρ_ref=p∞/(RT∞), a_ref=√(γRT∞), L_ref=c
+x*=x/c, ρ*=ρ/ρ_ref, u*=u/a_ref
+p*=p/(ρ_ref a_ref²), T*=T/(γT∞), μ*=μ/(ρ_ref a_ref c)
+t*=t a_ref/c, dt*=dt_seconds a_ref/c
+p∞*=T∞*=1/γ, R*=1
+S*=S/(γT∞), μ_ref*=μ∞/(ρ∞a∞c), T_ref*=1/γ</pre>
+<p>Defaults give a∞≈295.068 m/s, ρ∞≈0.301562731 kg/m³, V∞≈486.862 m/s, q∞≈35740.4355 Pa, and Re_c≈1.033×10⁷. Input coordinates and mesh bounds use chord units. Exported p,T,ρ,u,v,x,y use SI; internal NPY arrays remain nondimensional.</p></section>
+<section id="scheme"><h2>5. Discretization and preassembled operators</h2>
+<h3>5.1 Finite-volume residual</h3><pre class="eq">dU_i/dt = L_i(U)
+L_i = −(1/V_i) [Σ_f A_f F̂_c(U_L,U_R;n_if) − Σ_f A_f F̂_v + wall integrals]
+Each shared face is evaluated once and gathered with opposite signs by its two CVs.</pre>
+<p>Convection uses piecewise-constant, first-order spatial reconstruction without MUSCL slopes. First order does not make every time step stable. Viscous gradients use preassembled weighted least squares.</p>
+<h3>5.2 HLLC, the default flux</h3><pre class="eq">S_L=min(u_L−a_L,ũ−ã), S_R=max(u_R+a_R,ũ+ã)
+S_*=[p_R−p_L+ρ_Lu_L(S_L−u_L)−ρ_Ru_R(S_R−u_R)]
+     /[ρ_L(S_L−u_L)−ρ_R(S_R−u_R)]
+F̂ = F_L                   if 0 ≤ S_L
+     F_L+S_L(U_*L−U_L)     if S_L ≤ 0 ≤ S_*
+     F_R+S_R(U_*R−U_R)     if S_* ≤ 0 ≤ S_R
+     F_R                   if S_R ≤ 0</pre>
+<p>Here u_L/u_R are face-normal velocities; tangential momentum is retained. Roe averages estimate wave speeds, without inverting a global matrix. See <code>src/flux.h</code> and the CUDA implementation. Reference: <a href="https://doi.org/10.1007/BF01414629">Toro, Spruce, and Speares (1994)</a>.</p>
+<details><summary>AUSM+-up flux structure</summary><pre class="eq">â=(a_L+a_R)/2, M_L=u_L/â, M_R=u_R/â
+M_f=M₄⁺(M_L)+M₄⁻(M_R) − pressure-difference correction
+p_f=P₅⁺(M_L)p_L+P₅⁻(M_R)p_R − velocity-difference correction
+ṁ=â M_f ρ_upwind
+F̂=[ṁ,ṁu_upwind+p_f,ṁv_upwind,ṁH_upwind]ᵀ
+Kp=.25, Ku=.75, σ_AUSM=1, β=1/8, Mco=1</pre><p>The complete split polynomials and corrections are in <code>src/flux.h</code>. This published interface retains the compressible baseline Mco=1 and does not expose all-speed low-Mach adjustments.</p></details>
+<p><code>solver.flux=ausm</code> selects split AUSM+-up mass and pressure fluxes. This option does not enable an implicit method or low-Mach preconditioning. HLLC remains the default and baseline.</p>
+<h3>5.3 Least squares, CSR, and face-gradient correction</h3><pre class="eq">min_g Σ_j w_j [g·(x_j−x_i) − (φ_j−φ_i)]²
+M_i=Σ_j w_j d_ij d_ijᵀ
+g_i=M_i⁻¹ Σ_j w_j d_ij(φ_j−φ_i)
+g_f=½(g_L+g_R)+{[(φ_R−φ_L)−½(g_L+g_R)·d]/|d|²}d</pre>
+<p>Setup precomputes the 2×2 geometry inverses, weights, neighbor indices, face offsets, wall donors/distances, and true SA wall distances in CSR form, then uploads them. Stages perform coefficient accumulation without rebuilding matrices. Face correction reproduces differences along the centroid displacement.</p>
+<h3>5.4 SSP-RK3</h3><pre class="eq">U¹=Uⁿ+Δt L(Uⁿ)
+U²=¾Uⁿ+¼[U¹+Δt L(U¹)]
+Uⁿ⁺¹=⅓Uⁿ+⅔[U²+Δt L(U²)]</pre>
+<p>Each step evaluates three right-hand sides. Spatial accuracy remains limited by first-order convection and wall reconstruction. Reference: <a href="https://www.sciencedirect.com/science/article/pii/0021999188901775">Shu and Osher, JCP 77 (1988)</a>. RK3 alone does not establish third-order accuracy of the full cut-wall method.</p>
+<h3>5.5 GPU execution</h3><p>FP64 structure-of-arrays states remain on the GPU. Shared face fluxes are gathered with cell CSR connectivity; no global sparse-matrix inverse is formed. CUDA Graph batches dispatch 32 sequential time-step trials, rather than 32 independent flow cases. Fused SA combines repeated velocity/SA-gradient, face-wall, and gather traversals; the original agglomerated benchmark reduced graph nodes per trial from 29 to 20. The reference layout remains selectable. The restructuring preserves physics and CFL settings.</p>
+<p>The published pipeline adds no implicit method, local time stepping, multigrid, multi-case batching, or shared-memory tiling. Mesh, CUDA event, advance wall, process, and Python export times are reported separately.</p></section>
+<section id="wall"><h2>6. Walls, angle of attack, and outer boundaries</h2>
+<h3>6.1 No-slip cut wall</h3><pre class="eq">u_wall=v_wall=0, ν̃_wall=0, μ_t,wall=0
+(∂u/∂n)_wall ≈ (u_wall−u_donor)/d_n
+(∂v/∂n)_wall ≈ (v_wall−v_donor)/d_n</pre>
+<p>Donors must be visible from the fluid side, with d_n≥0.25h by default. If the owner is unsuitable, a valid donor is selected; negative distances are not clipped to small positive values. Wall stress uses molecular viscosity and one-sided normal gradients. Stationary-wall viscous work is zero. With κ=0, there is no isothermal/adiabatic Fourier-wall option; <code>temperature_owner_K</code> is a near-wall sample.</p>
+<h3>6.2 Characteristic farfield, default on all four sides</h3><pre class="eq">λ=[u_n−a,u_n,u_n,u_n+a]
+Supersonic inflow, u_n≤−a: prescribe the complete freestream state.
+Supersonic outflow, u_n≥a: all characteristics leave; do not impose outlet pressure.
+Subsonic flow: combine outgoing interior and incoming freestream acoustic invariants;
+select entropy and tangential velocity according to flow direction.</pre>
+<p>Each face uses its own outward normal. Changing angle of attack changes local inflow/outflow classification; upper and lower boundaries are not fixed inlets or outlets. Mach, angle of attack, and static p/T determine the freestream.</p>
+<h3>6.3 Optional pressure outlet</h3><p>Set <code>boundaries.xmax="pressure-outlet"</code> and <code>outlet_pressure_Pa</code>. Subsonic outflow imposes the static pressure while preserving a compatible interior characteristic. Supersonic outflow extrapolates without enforcing that pressure. Backflow uses the freestream reference as a characteristic reservoir. SA inflow uses freestream ν̃; outflow extrapolates it. See <code>src/static_amr2d_boundary.h</code>.</p>
+<pre>{"boundaries":{"xmax":"pressure-outlet","outlet_pressure_Pa":18754}}
+python3 quick_cfd.py run --points examples/G0001_airfoil_points.csv --config config/pressure_outlet.json</pre>
+<p><code>transmissive</code> is selectable; characteristic farfield is the default for external flow. This interface does not expose the core total-pressure inlet operator; that extension needs parameter design and validation.</p></section>
+<section id="sa"><h2>7. One-equation SA-neg model</h2>
+<p>The fifth conserved quantity is Q=ρν̃. The working variable ν̃ differs from eddy viscosity ν_t. The <a href="https://tmbwg.github.io/turbmodels/spalart.html">NASA TMR SA-neg definition</a> includes ft2 and the Note 1c modification, without rotation, roughness, or extra compressibility corrections.</p>
+<pre class="eq">χ=ν̃/ν, f_v1=χ³/(χ³+c_v1³), μ_t=ρν̃ f_v1 for ν̃≥0
+ν=μ/ρ, c_v1=7.1, σ=2/3, c_b1=.1355, c_b2=.622, κ_SA=.41
+∂Q/∂t+∇·(ρuν̃)=∇·(ρA∇ν̃)+ρ[P−D+(c_b2/σ)|∇ν̃|²]−A∇ρ·∇ν̃
+A=(ν+ν̃)/σ on the nonnegative branch
+P=c_b1(1−f_t2)S̃ν̃
+D=[c_w1 f_w−c_b1 f_t2/κ_SA²](ν̃/d)²
+f_t2=1.2 exp(−.5χ²), c_w1=c_b1/κ_SA²+(1+c_b2)/σ</pre>
+<p>The term −A∇ρ·∇ν̃ follows algebraically from writing the same ν̃ diffusion equation in conservative ρν̃ form; it is not an additional compressibility model. SA convection shares the mean-flow mass flux and upwinds ν̃. Diffusion uses shared face fluxes and corrected gradients.</p>
+<details><summary>Closure functions and the negative branch</summary><pre class="eq">Ω=|v_x−u_y|, f_v2=1−χ/(1+χ f_v1), S̄=ν̃ f_v2/(κ_SA²d²)
+S̃=Ω+S̄                           if S̄≥−.7Ω
+  =Ω(−.01Ω−.1S̄)/(−.5Ω−S̄)       otherwise
+r=min[ν̃/(S̃κ_SA²d²),10]; use r=10 when S̃=0
+g=r+.3(r⁶−r), f_w=g[65/(g⁶+64)]^(1/6)
+For negative ν̃: χ=ν̃/ν, f_n=(16+χ³)/(16−χ³)
+A=(ν+ν̃ f_n)/σ, μ_t=0
+Model source=c_b1(1−1.2)Ων̃+c_w1(ν̃/d)²
+Retain the conservative density-gradient and gradient-square terms.</pre><p>The piecewise S̃ expression is algebraically equivalent to Note 1c and avoids intermediate underflow for tiny Ω. Model bounds on r and the prescribed negative branch are distinct from clipping conserved states or imposing an artificial eddy-viscosity cap.</p></details>
+<p>Negative ν̃ uses the SA-neg source/diffusion extension with μ_t=0; ν̃ is not clipped to zero. Complete branches and closure functions are in <code>src/sa_model.h</code>.</p>
+<p>d is the actual shortest distance from a CV centroid to an original polygon segment or endpoint, precomputed once. It differs from the donor-normal distance d_n used for wall stress. Defaults are ν̃∞=3ν∞ and ν̃_wall=0. Model diffusion and source rates constrain automatic time steps.</p>
+<p class="note">The implemented coupling is mechanical. Fourier/turbulent heat transfer, wall functions, and NASA flat-plate Cf/profile certification are absent. Re≈10⁷ and h≈c/128 do not establish wall-layer resolution; treat CL/CD/CM as qualitative outputs or version comparisons.</p></section>
+<section id="time"><h2>8. CFL, fixed time steps, and convergence</h2>
+<h3>8.1 Automatic global time step</h3><pre class="eq">Δt_conv,i=CFL V_i/[Σ_f(|u_n|+a)_f A_f+wall acoustic rate]
+Δt_visc,i=viscous_CFL V_i/Σ_f[(4/3)ν_eff/d_f]A_f
+Δt_SA,i=SA_CFL/[2Σ_f K_f/(ρ_i V_i)+SA_source_rate_i]
+Δt=min_i(Δt_conv,i,Δt_visc,i,Δt_SA,i,time remaining to the current target)</pre>
+<p>K_f is the shared SA diffusion coefficient times face length divided by distance, including walls. This is explicit global stepping. Defaults: CFL=.15, viscous_CFL=.1, SA_CFL=.1. Set them independently in JSON; <code>--cfl</code> selects automatic CFL control.</p>
+<h3>8.2 Fixed physical time step</h3><pre>python3 quick_cfd.py run --points examples/G0001_airfoil_points.csv --mode time --stop-time .01 --dt 1e-7
+# Equivalent JSON override:
+{"solver":{"time_step":{"mode":"fixed","dt_seconds":1e-7}}}</pre>
+<p>Time steps are entered in seconds and converted to dt*. Fixed dt replaces automatic convective, viscous, and SA limits, shortening only at the target time. Oversized steps can fail positivity. The program does not silently change CFL, clip states, or switch models. <code>--cfl</code> and <code>--dt</code> are mutually exclusive.</p>
+<h3>8.3 Reaching a time and reaching steady state</h3><p><code>--mode time --stop-time 1</code> advances to t*=1 without a steady-state claim. <code>--physical-time .003</code> sets a time cap in seconds; the two cap options are mutually exclusive. Defaults are steady mode, t*=100, and a 118-second process budget per grid.</p>
+<pre class="eq">Near-field region Ω: x/c∈[−1,3], y/c∈[−1,1]
+R_k=Σ_(i∈Ω)V_i|L_i,k|/Σ_(i∈Ω)V_i ≤ 10⁻³, k=ρ,ρu,ρv,ρE
+R_SA/ν̃∞ ≤ 10⁻³
+δCL=|CL_now−CL_prev|/max(.1,|CL_now|) ≤ .005
+δCD=|CD_now−CD_prev|/max(.01,|CD_now|) ≤ .005
+δCM=|CM_now−CM_prev|/max(.01,|CM_now|) ≤ .005</pre>
+<p>The first diagnostic is at t*=.01, then every .5. For t*≥3, all criteria must pass together for five consecutive checks. Flat CL/CD alone is insufficient. Configurable thresholds are preserved in the resolved configuration and must not be confused with unchanged baseline criteria.</p>
+<p>These criteria measure near-field volume-averaged raw RHS and load stability; they do not establish pointwise global residual convergence, grid independence, or experimental accuracy. Exit codes: 0 for completed mesh/time tasks or converged steady flow; 2 for input/numerical/output errors; 3 for an unconverged steady run, with results saved. GPU budgets are checked between batches. A CPU advance call has no hard real-time interruption.</p></section>
+<section id="output"><h2>9. Fields, wall data, and aerodynamic integration</h2>
+<h3>9.1 Field selection and binary formats</h3><table><tr><th>Field</th><th>x,y</th><th>p</th><th>rho</th><th>u,v</th><th>mach</th><th>temperature</th></tr><tr><td>Unit</td><td>m</td><td>Pa</td><td>kg/m³</td><td>m/s</td><td>1</td><td>K</td></tr></table>
+<pre>python3 quick_cfd.py run --points examples/G0001_airfoil_points.csv --fields x y p mach --region -.5 2 -.5 .5 --formats npz
+python3 quick_cfd.py export --run runs/my_airfoil --fields x y p rho u v mach temperature --region -.5 2 -.5 .5 --formats npz csv</pre>
+<p>The region uses x/c,y/c and selects CVs by centroid. Values are CV averages, without regular-pixel interpolation. Tables include cell_id and actual fluid_area_m2. Uncompressed NPZ avoids text-conversion overhead; CSV is convenient for inspection. Internal NPY files retain complete nondimensional states and geometry separately from selected exports.</p>
+<p><code>output.sample_points_xy_c</code> selects nearest-fluid-CV probes with query distances, without interpolation. Solid, wall, and out-of-domain queries are rejected. See <code>config/field_selection.json</code>. Re-export changes product files while preserving solver data; obsolete exports are removed so old CSVs cannot be mistaken for current NPZs.</p>
+<h3>One row per case for NNLCI</h3><p><code>aerodynamics.csv/.npz</code> contains one row of selected loads. fx/fy are total forces. viscous_force_x/y, viscous_drag/lift, and viscous_moment_z select viscous components; pressure components follow the same naming. moment_z is total Mz, with moment as an alias. CL/CD/CM_z are dimensionless. loads.json retains the full decomposition; loads.csv contains pressure, viscous, and total rows.</p>
+<pre>python3 quick_cfd.py export --run runs/my_airfoil --load-fields drag lift fx fy viscous_force_x viscous_force_y viscous_drag viscous_lift moment_z CL CD CM_z
+# JSON: output.load_fields=["drag","lift","fx","fy","moment_z"]
+# --no-loads disables load files; --no-surface disables surface tables.
+# These output switches do not change solver convergence monitoring.</pre>
+<p>Reduce file output by selecting only surface data or aerodynamic coefficients:</p><pre>python3 quick_cfd.py export --run runs/my_airfoil --no-volume --surface --no-loads
+python3 quick_cfd.py export --run runs/my_airfoil --no-volume --no-surface --loads --load-fields CL CD CM_z drag lift</pre><p>JSON switches are output.volume, output.surface, and output.loads. Raw internal data remain available for later re-export.</p>
+<h3>9.2 Surface sampling and markers</h3><p>Rows represent actual wall fragments and include wall_id, source_edge, owner, donor, patch, normal, and length. All patches are selected by default; upper/lower/trailing-edge selection is available. Coordinates are wall-segment midpoints. p_owner_Pa, rho_owner_kg_m3, and temperature_owner_K sample the neighboring owner CV and are not fully reconstructed wall thermodynamic states. Stationary no-slip wall velocity and Mach are zero. Additional columns include Cp, donor viscosity, d_n, signed shear, and fragment pressure/viscous forces.</p>
+<h3>9.3 Forces, lift/drag, and Mz</h3><pre class="eq">n_w points from fluid into solid
+ΔF_pressure=p_w n_w ℓ_w
+ΔF_viscous=−τ_w·n_w ℓ_w
+F=Σ_w(ΔF_pressure+ΔF_viscous)
+D=Fx cosα+Fy sinα
+L=−Fx sinα+Fy cosα
+Mz=Σ_w[(x_w−x_ref)ΔFy−(y_w−y_ref)ΔFx]
+CD=D/(q∞c), CL=L/(q∞c), CMz=Mz/(q∞c²), q∞=½ρ∞V∞²</pre>
+<p><b>The flow lies in the xy plane; positive Mz is counterclockwise.</b> No separate nose-up sign convention is applied. The reference defaults to (.25c,0), configurable with <code>solver.moment_reference_xy_c</code>. Two-dimensional forces are N/m span, and moments are N m/m span. Pressure, viscous, and total components each include Fx,Fy,drag,lift,Mz and dimensionless coefficients; JSON also contains patch contributions.</p>
+<p>Whole-airfoil loads always include all original wall fragments, independent of field ROI or surface selection. Absolute static pressure is used; its constant contribution cancels for a closed body, but not for individual patches. Signed shear follows the fluid-stress tangent convention; body viscous force uses the reaction, so integrate force columns directly.</p>
+<h3>9.4 Files and timing definitions</h3><pre>run_folder/
+  geometry/               input, ordered polygon, patches, hashes
+  config.resolved.json    complete configuration
+  pipeline.json           total time, scales, source/executable hashes, grid results
+  index.html              per-grid summary
+  LF1/, LF2/
+    settings.txt, command.json, config.resolved.json, solver.log, result.json
+    internal/flow.*       complete nondimensional geometry/state/history/GPU statistics
+    output/               field, surface, loads, aerodynamics, mesh, metadata</pre>
+<p>mesh_setup includes polygon input, cut-cell/AMR construction, merging, geometry checks, and fixed tables, excluding GPU setup and solving. CUDA event time sums elapsed trial-batch stream intervals and can include dispatch gaps. Advance wall time includes control and waiting. Process time covers all C++ setup, monitoring, and output. Pipeline time additionally includes point processing, process launch, and Python export. These scopes overlap and cannot all be added or subtracted directly.</p>
+<p>After re-export, pipeline.json retains the original calculation. export.config.json and export.history.json describe current output options and export history without changing the solution.</p></section>
+<section id="flows"><h2>10. Computed airfoil flow gallery</h2>
+<p>These figures come from the saved G0001 computations, not illustrative images. Conditions: M∞=1.65, α=1.5°, p∞=18,754 Pa, T∞=216.65 K, c=1 m; SA-neg, Sutherland viscosity, no-slip wall, κ=0. Each grid began independently from uniform freestream and passed the original steady criteria.</p>
+<img src="docs/assets/G0001_LF2_flow.png" alt="Computed G0001 LF2 Mach number, static pressure, velocity magnitude, and temperature">
+<p>The Mach panel shows acceleration and deceleration around the airfoil. Higher pressure identifies compressed regions; the velocity panel shows the associated speed changes. Temperature follows the compressible energy equation and mechanical viscous work; it is not a heat-transfer prediction. Discontinuities are spread over cells by the first-order scheme.</p>
+<details><summary>Compare the coarser LF1 result</summary><img src="docs/assets/G0001_LF1_flow.png" alt="Computed G0001 LF1 Mach number, static pressure, velocity magnitude, and temperature"><p>LF1 and LF2 use different fixed refinement rules. Their visual comparison shows the effect of resolution; it does not establish grid independence.</p></details>
+<img src="docs/assets/G0001_surface_comparison.png" alt="G0001 LF1 and LF2 surface pressure coefficient comparison">
+<p>Surface Cp uses owner-cell pressure and is plotted at wall-fragment midpoints. Upper/lower patches are shown separately. The axis is inverted according to the usual pressure-coefficient plotting convention. Fine geometric fragments may share an owner CV and pressure value.</p>
+<p>Rendering assigns each agglomerated CV average to its background member rectangles, then masks the solid airfoil. It does not reconstruct exact cut polygons or interpolate a smoother solution. The compact plotting input and provenance are retained in <code>docs/data/</code>; regenerate figures with <code>python3 docs/plot_flow_gallery.py</code> after installing <code>docs/requirements.txt</code>.</p></section>
+<section id="editor"><h2>11. Configuration editor</h2><p>The complete package defaults appear below. Edit and download the JSON, then load it with <code>--config airfoil_config.json</code>. Partial overrides are also accepted; unknown keys cause errors. This offline page edits configuration only; it does not run the solver in the browser.</p>
+<div id="controls"><label>Mach <input id="Mach" type="number" step=".05" value="1.65"></label><label>AOA° <input id="AOA" type="number" step=".5" value="1.5"></label><label>p∞ Pa <input id="pressure" type="number" value="18754"></label><label>T∞ K <input id="temperature" type="number" value="216.65"></label><label>SA <select id="turbulence"><option>sa-neg</option><option>none</option></select></label><label>μ <select id="viscosity"><option>sutherland</option><option>constant</option></select></label><label>CFL <input id="CFL" type="number" step=".01" value=".15"></label><label>Wall buffer <input id="buffer" type="number" step="1" value="4"></label><label>LF1 levels <input id="LF1levels" type="number" value="5"></label><label>LF2 levels <input id="LF2levels" type="number" value="6"></label></div>
+<p><button id="apply">Apply controls to JSON</button> <button id="download">Check JSON and download</button> <button id="reset">Restore defaults</button> <span id="editorStatus"></span></p><textarea id="config" spellcheck="false">{
+  &quot;freestream&quot;: {
+    &quot;Mach&quot;: 1.65,
+    &quot;AOA_degrees&quot;: 1.5,
+    &quot;p_Pa&quot;: 18754.0,
+    &quot;T_K&quot;: 216.65,
+    &quot;chord_m&quot;: 1.0,
+    &quot;gamma&quot;: 1.4,
+    &quot;R_J_kgK&quot;: 287.05
+  },
+  &quot;boundaries&quot;: {
+    &quot;xmin&quot;: &quot;farfield&quot;,
+    &quot;xmax&quot;: &quot;farfield&quot;,
+    &quot;ymin&quot;: &quot;farfield&quot;,
+    &quot;ymax&quot;: &quot;farfield&quot;,
+    &quot;outlet_pressure_Pa&quot;: 18754.0
+  },
+  &quot;physics&quot;: {
+    &quot;turbulence&quot;: &quot;sa-neg&quot;,
+    &quot;viscosity&quot;: &quot;sutherland&quot;,
+    &quot;constant_mu_Pa_s&quot;: null,
+    &quot;sutherland&quot;: {
+      &quot;mu0_Pa_s&quot;: 1.716e-05,
+      &quot;T0_K&quot;: 273.15,
+      &quot;S_K&quot;: 110.4
+    },
+    &quot;sa_nu_inf_over_nu&quot;: 3.0,
+    &quot;wall_probe_min_h&quot;: 0.25
+  },
+  &quot;solver&quot;: {
+    &quot;backend&quot;: &quot;cuda&quot;,
+    &quot;flux&quot;: &quot;hllc&quot;,
+    &quot;sa_layout&quot;: &quot;fused&quot;,
+    &quot;CFL&quot;: 0.15,
+    &quot;viscous_CFL&quot;: 0.1,
+    &quot;SA_CFL&quot;: 0.1,
+    &quot;time_step&quot;: {
+      &quot;mode&quot;: &quot;cfl&quot;,
+      &quot;dt_seconds&quot;: null
+    },
+    &quot;mode&quot;: &quot;steady&quot;,
+    &quot;stop_time_star&quot;: 100.0,
+    &quot;budget_seconds&quot;: 118.0,
+    &quot;moment_reference_xy_c&quot;: [
+      0.25,
+      0.0
+    ],
+    &quot;convergence&quot;: {
+      &quot;raw_tolerance&quot;: 0.001,
+      &quot;coefficient_change&quot;: 0.005,
+      &quot;hold&quot;: 5,
+      &quot;min_time_star&quot;: 3.0,
+      &quot;check_period_star&quot;: 0.5,
+      &quot;residual_region_xy_c&quot;: [
+        -1.0,
+        3.0,
+        -1.0,
+        1.0
+      ]
+    }
+  },
+  &quot;mesh&quot;: {
+    &quot;bounds_xy_c&quot;: [
+      -7.0,
+      14.0,
+      -10.0,
+      10.0
+    ],
+    &quot;base_shape&quot;: [
+      42,
+      40
+    ],
+    &quot;wall_buffer&quot;: 4,
+    &quot;max_cells&quot;: 2000000,
+    &quot;profiles&quot;: {
+      &quot;LF1&quot;: {
+        &quot;levels&quot;: 5,
+        &quot;boxes&quot;: [
+          [
+            -0.5,
+            2.0,
+            -0.75,
+            0.75,
+            3
+          ],
+          [
+            1.0,
+            4.0,
+            -0.35,
+            0.65,
+            3
+          ],
+          [
+            -2.0,
+            6.0,
+            -3.0,
+            3.0,
+            1
+          ]
+        ]
+      },
+      &quot;LF2&quot;: {
+        &quot;levels&quot;: 6,
+        &quot;boxes&quot;: [
+          [
+            -0.5,
+            2.0,
+            -0.75,
+            0.75,
+            4
+          ],
+          [
+            1.0,
+            4.0,
+            -0.35,
+            0.65,
+            3
+          ],
+          [
+            -2.0,
+            6.0,
+            -3.0,
+            3.0,
+            1
+          ],
+          [
+            2.0,
+            3.25,
+            -0.35,
+            0.65,
+            4
+          ]
+        ]
+      }
+    }
+  },
+  &quot;output&quot;: {
+    &quot;fields&quot;: [
+      &quot;x&quot;,
+      &quot;y&quot;,
+      &quot;p&quot;,
+      &quot;rho&quot;,
+      &quot;u&quot;,
+      &quot;v&quot;,
+      &quot;mach&quot;,
+      &quot;temperature&quot;
+    ],
+    &quot;formats&quot;: [
+      &quot;npz&quot;,
+      &quot;csv&quot;
+    ],
+    &quot;region_xy_c&quot;: null,
+    &quot;sample_points_xy_c&quot;: [],
+    &quot;surface&quot;: true,
+    &quot;surface_patches&quot;: [
+      1,
+      2,
+      3
+    ],
+    &quot;loads&quot;: true,
+    &quot;load_fields&quot;: [
+      &quot;drag&quot;,
+      &quot;lift&quot;,
+      &quot;fx&quot;,
+      &quot;fy&quot;,
+      &quot;pressure_force_x&quot;,
+      &quot;pressure_force_y&quot;,
+      &quot;pressure_drag&quot;,
+      &quot;pressure_lift&quot;,
+      &quot;viscous_force_x&quot;,
+      &quot;viscous_force_y&quot;,
+      &quot;viscous_drag&quot;,
+      &quot;viscous_lift&quot;,
+      &quot;moment_z&quot;,
+      &quot;pressure_moment_z&quot;,
+      &quot;viscous_moment_z&quot;,
+      &quot;CD&quot;,
+      &quot;CL&quot;,
+      &quot;CM_z&quot;
+    ],
+    &quot;volume&quot;: true
+  }
+}</textarea>
+<p>Edit refinement boxes directly in JSON. Reducing a profile's maximum levels also requires box.level values at or below that limit. The Python entry point performs full parameter validation; the download button only checks JSON syntax.</p></section>
+<section id="roadmap"><h2>Development status: 3D and low-Mach preconditioning</h2><p>The published pipeline is two-dimensional and has no low-Mach preconditioning switch. A separate local development effort is implementing steady low-Mach preconditioning and a viscous, one-equation Spalart–Allmaras 3D sphere case. Those changes are not included in this English documentation update. See <a href="NEXT_SESSION.md">development notes</a>.</p>
+<p>Planned low-speed checks cover M=.1/.01/.001, pseudo-time and flux/boundary consistency, cut cells, viscosity, SA, and CPU/CUDA agreement while preserving the LF1/LF2 high-speed regressions. Real unsteady flow requires the correct physical-time equation; steady pseudo-time must not be reported as physical time.</p>
+<p>Heat transfer remains a later task: Fourier fluxes, Pr/Prt, and thermal-wall conditions. Solid conduction also requires an energy equation and interface coupling. The published mechanical model retains κ=0.</p></section>
+<section id="validation"><h2>12. Validation records and scope</h2><p>The core was copied from a validated standalone snapshot. <a href="CORE_PROVENANCE.json">CORE_PROVENANCE.json</a> retains the extraction hashes and the current English-source hashes. This update translates comments and interface text; the published numerical operators are unchanged. The quick driver adds parameter handling and output conversion.</p>
+<p>Historical comparisons cover ten airfoils at LF1/LF2, for 20 short runs matching archived geometry, all five equations, loads, and step counts. Full G0001 steady results were saved for both grids. Records: <a href="validation/ten_short_checks.json">20 comparisons</a>, <a href="validation/summary.json">audit and measured timing</a>, <a href="validation/controls_checks.json">parameter controls</a>. Large raw runs and archived binaries remain local.</p>
+<p>Original preregistered comparison thresholds: relative field L1≤2e-11, Linf≤2e-10, relative SA Linf≤2e-10, and identical steps, times, and rejected-step counts. SI EOS and wall-load integration are checked separately.</p>
+<table><tr><th>G0001 default</th><th>CVs</th><th>Mesh (s)</th><th>GPU event (s)</th><th>C++ process (s)</th></tr><tr><td>LF1</td><td>4725</td><td>0.0642</td><td>12.327</td><td>13.313</td></tr><tr><td>LF2</td><td>9533</td><td>0.1274</td><td>22.659</td><td>23.816</td></tr></table><p>Total pipeline time, including both grids and Python processing: 39.434 seconds. One geometry and one measurement, not a runtime guarantee. Both grids met the original steady criteria with zero rejected steps.</p>
+<p class="note">This is a fast, coarse-grid tool for qualitative aerodynamic data. LF1/LF2 are refinement rules, not proof of mesh independence. High-Re wall layers and turbulent drag are not experimentally certified. κ=0 prevents heat-transfer prediction. The published pipeline does not provide 3D, dynamic AMR, moving meshes, FSI, or an exposed implicit solver.</p></section>
+<script>
+const defaults={"freestream": {"Mach": 1.65, "AOA_degrees": 1.5, "p_Pa": 18754.0, "T_K": 216.65, "chord_m": 1.0, "gamma": 1.4, "R_J_kgK": 287.05}, "boundaries": {"xmin": "farfield", "xmax": "farfield", "ymin": "farfield", "ymax": "farfield", "outlet_pressure_Pa": 18754.0}, "physics": {"turbulence": "sa-neg", "viscosity": "sutherland", "constant_mu_Pa_s": null, "sutherland": {"mu0_Pa_s": 1.716e-05, "T0_K": 273.15, "S_K": 110.4}, "sa_nu_inf_over_nu": 3.0, "wall_probe_min_h": 0.25}, "solver": {"backend": "cuda", "flux": "hllc", "sa_layout": "fused", "CFL": 0.15, "viscous_CFL": 0.1, "SA_CFL": 0.1, "time_step": {"mode": "cfl", "dt_seconds": null}, "mode": "steady", "stop_time_star": 100.0, "budget_seconds": 118.0, "moment_reference_xy_c": [0.25, 0.0], "convergence": {"raw_tolerance": 0.001, "coefficient_change": 0.005, "hold": 5, "min_time_star": 3.0, "check_period_star": 0.5, "residual_region_xy_c": [-1.0, 3.0, -1.0, 1.0]}}, "mesh": {"bounds_xy_c": [-7.0, 14.0, -10.0, 10.0], "base_shape": [42, 40], "wall_buffer": 4, "max_cells": 2000000, "profiles": {"LF1": {"levels": 5, "boxes": [[-0.5, 2.0, -0.75, 0.75, 3], [1.0, 4.0, -0.35, 0.65, 3], [-2.0, 6.0, -3.0, 3.0, 1]]}, "LF2": {"levels": 6, "boxes": [[-0.5, 2.0, -0.75, 0.75, 4], [1.0, 4.0, -0.35, 0.65, 3], [-2.0, 6.0, -3.0, 3.0, 1], [2.0, 3.25, -0.35, 0.65, 4]]}}}, "output": {"fields": ["x", "y", "p", "rho", "u", "v", "mach", "temperature"], "formats": ["npz", "csv"], "region_xy_c": null, "sample_points_xy_c": [], "surface": true, "surface_patches": [1, 2, 3], "loads": true, "load_fields": ["drag", "lift", "fx", "fy", "pressure_force_x", "pressure_force_y", "pressure_drag", "pressure_lift", "viscous_force_x", "viscous_force_y", "viscous_drag", "viscous_lift", "moment_z", "pressure_moment_z", "viscous_moment_z", "CD", "CL", "CM_z"], "volume": true}},editor=document.getElementById('config'),status=document.getElementById('editorStatus');
+document.getElementById('apply').onclick=()=>{try{let c=JSON.parse(editor.value);c.freestream.Mach=+document.getElementById('Mach').value;c.freestream.AOA_degrees=+document.getElementById('AOA').value;c.freestream.p_Pa=+document.getElementById('pressure').value;c.freestream.T_K=+document.getElementById('temperature').value;c.physics.turbulence=document.getElementById('turbulence').value;c.physics.viscosity=document.getElementById('viscosity').value;c.solver.CFL=+document.getElementById('CFL').value;c.solver.time_step={mode:'cfl',dt_seconds:null};c.mesh.wall_buffer=+document.getElementById('buffer').value;for(let key of ['LF1','LF2'])c.mesh.profiles[key].levels=+document.getElementById(key+'levels').value;editor.value=JSON.stringify(c,null,2);status.textContent='JSON updated. No simulation has been run.'}catch(e){status.textContent=e.message}};
+document.getElementById('download').onclick=()=>{try{const c=JSON.parse(editor.value),blob=new Blob([JSON.stringify(c,null,2)+'\n'],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='airfoil_config.json';a.click();URL.revokeObjectURL(url);status.textContent='Downloaded. Python validates all parameters when the configuration is used.'}catch(e){status.textContent=e.message}};
+document.getElementById('reset').onclick=()=>{editor.value=JSON.stringify(defaults,null,2);status.textContent='Default JSON restored.'};
+</script></html>

@@ -1,130 +1,82 @@
-# Quick CFD: GPU-first multi-fidelity compressible CFD
+# quick_CFD_for_NNLCI_airfoil_opt_case
 
-Quick CFD is a GPU-oriented research code for rapidly generating qualitative
-compressible-flow fields and aerodynamic trends for NNLCI and other surrogate
-models.  It spans a fast two-dimensional Cartesian cut-cell airfoil path,
-general three-dimensional explicit-face meshes, and a procedural Cartesian-AMR
-cut-cell path for full aircraft.  The package contains source, reproducible
-examples, retained settings, mesh converters, validation metadata, and a
-complete English theory and operation manual.
+Start with [GUIDE.html](GUIDE.html) for the equations, algorithms, mesh presets, offline configuration editor, and output definitions. Download or clone the repository and open the guide locally in a browser.
 
-This is a research and surrogate-data-generation code.  It is not a certified
-replacement for a production CFD package.  In particular, the current CRM
-states are transient development states, not converged drag-validation results.
+A standalone pipeline: **GXXX point CSV → contour preparation → LF1/LF2 AMR cut-cell meshes → CPU/CUDA solver → SI fields, wall data, and aerodynamic loads**. Source code, standalone CMake configuration, the Python entry point, defaults, and ten example airfoils are included. No parent-project code or geometry is required.
 
-**Accuracy validation is ongoing.**  Geometry closure, uniform-flow
-preservation, positivity, restart behavior, and fixed-step CPU/CUDA agreement
-have verification evidence.  The 2-D NACA4412 case has a matched XFOIL
-numerical comparison.  CRM surface pressure, integrated CL/CD/CM, long-window
-convergence, and grid independence are still under development.  The large
-CRM timings below demonstrate GPU throughput, not time to a validated
-aerodynamic answer.
+## Computed flow example
 
-![CRM Cartesian-AMR symmetry-plane flow](examples/3d_crm_amr/showcase/crm_xz_symmetry_mach_cp.png)
+![G0001 LF2: computed Mach number, pressure, velocity magnitude, and temperature](docs/assets/G0001_LF2_flow.png)
 
-## Demonstrated scale and speed
+Saved G0001 result: M∞=1.65, angle of attack 1.5°, p∞=18,754 Pa, T∞=216.65 K, chord 1 m; SA-neg with Sutherland viscosity and a no-slip wall. LF2 has 9,533 fluid control volumes and passed the original steady criteria. Colors show control-volume averages on background member rectangles, with the solid masked. Pressure and temperature changes follow compressible mechanical flow; thermal conductivity is zero. See the [Guide flow gallery](GUIDE.html#flows) for LF1/LF2 fields, surface Cp, and interpretation. Plot data and provenance are retained in [docs/data](docs/data).
 
-The retained CUDA measurements below were produced in the RTX 4090 development
-environment.  They report actual process or solver-compute time, not an
-extrapolated kernel rate.  The demonstrated Mach envelope is **0.2 through
-1.65**.  This is the range exercised by the retained low-subsonic, transonic,
-and supersonic cases; it is not a hard parser limit or a validation claim
-outside those conditions.
+## Quick start
 
-| Case | Mach | Mesh size | Recorded GPU work and time | Interpretation |
-|---|---:|---:|---:|---|
-| NACA4412 LF1/LF2 | 0.20 | 4,718 / 9,517 controls | 20.07 / 33.09 s process time | CL/CM/Cp gate passed against the matched XFOIL numerical reference |
-| RAE2822 hybrid LF1 | 0.78 | 5,051 wedge/hexa cells | 49,000 DP-LUR updates in 11.24 s compute | solver gate passed; experimental accuracy is not claimed |
-| NASA CRM tetra | 0.85 | 10,067,380 tetrahedra | 5,850 DP-LUR updates in 600.20 s compute; 610.35 s total wall time | throughput demonstration; state remains unconverged |
-| NASA CRM Cartesian AMR | 0.85 | 21,523,036 active controls from 31,478,784 procedural cells | 297 DP-LUR updates in 121.19 s compute | large-grid throughput demonstration; state remains unconverged |
-| 3-D sphere regression | 1.65 | 7,680 polyhedral cells | retained end-to-end showcase in 2.15 s process time | coarse conservation/CPU-CUDA regression, not an accuracy benchmark |
+Requirements: Python 3.9+, NumPy, CMake 3.18+, and C++17. GPU execution additionally requires the CUDA Toolkit and a compatible NVIDIA GPU. The default CUDA architecture is 89 for RTX 4090; specify the correct architecture when building for another GPU.
 
-On the 21.52M-control CRM AMR mesh, one retained update averaged about 0.408 s.
-The complete final mesh build from the closed surface took about 8 min 52 s;
-rebuilding the final refinement after its reusable parent took about 5 min
-20 s.  These are single-case measurements, not universal runtime guarantees.
+```sh
+cd quick_CFD_for_NNLCI_airfoil_opt_case
+python3 -m pip install -r requirements.txt
+python3 quick_cfd.py build
+python3 quick_cfd.py run --points examples/G0001_airfoil_points.csv --out runs/my_airfoil
+```
 
-## Supported mesh representations
+Each input runs **both LF1 and LF2** by default. The output directory must be new or empty. Both grids start independently from uniform freestream at t=0; there is no LF1-to-LF2 warm start. Open `runs/my_airfoil/index.html` after the run.
 
-| Dimension | Representation | Current use |
+```sh
+# Generate both meshes only
+python3 quick_cfd.py mesh --points examples/G0001_airfoil_points.csv --out runs/mesh_only
+# Save the complete defaults, then edit the JSON
+python3 quick_cfd.py init-config --out my_config.json
+python3 quick_cfd.py run --points examples/G0002_airfoil_points.csv --config my_config.json
+# Physical freestream, laminar flow, constant viscosity, and a selected output region
+python3 quick_cfd.py run --points examples/G0001_airfoil_points.csv --mach 1.35 --aoa 5 --pressure 18754 --temperature 216.65 --turbulence none --viscosity constant --region -0.5 2 -0.5 0.5 --fields x y p mach
+# Run LF2 to a specified nondimensional time without claiming steady state
+python3 quick_cfd.py run --points examples/G0001_airfoil_points.csv --levels LF2 --mode time --stop-time 1
+# Re-export without running the solver; the region uses x/c,y/c, while fields use SI
+python3 quick_cfd.py export --run runs/my_airfoil --fields x y p mach --region -0.5 2 -0.5 0.5 --formats npz
+# Build and run on CPU without CUDA
+python3 quick_cfd.py build --cpu
+python3 quick_cfd.py run --backend cpu --points examples/G0001_airfoil_points.csv --mode time --stop-time 0.01
+```
+
+## Defaults
+
+| Setting | LF1 | LF2 |
 |---|---|---|
-| 2-D | structured Cartesian and quadtree AMR cut cells | LF1/LF2 airfoils with exact wall segments and small-cell treatment |
-| 3-D | explicit owner/neighbour polyhedral faces | tetrahedra, wedges, hexahedra, and six-block sphere meshes |
-| 3-D | procedural multi-block Cartesian octree AMR | 8x8x8 leaf blocks, exact cut faces, conservative agglomeration, and 2:1 interfaces |
+| Typical fluid control volumes | 4668–4725 | 9433–9533 |
+| Background cells | 42×40 | 42×40 |
+| Maximum refinement level | 5 | 6 |
+| Wall h/c | 1/64 | 1/128 |
+| Wall buffer | 4 | 4 |
 
-The procedural path stores regular block topology implicitly and materializes
-only interfaces, physical boundaries, cut-face exceptions, and wall fragments.
-That design reduces face-storage and traversal cost while preserving exact
-cut-surface load integration.
+Counts depend on geometry. LF1/LF2 identify fixed refinement rules, rather than prescribed cell counts. Complete boxes and parameters are in [config/default.json](config/default.json).
 
-## Implemented paths
+Common settings: M∞=1.65, angle of attack 1.5°, p∞=18,754 Pa, T∞=216.65 K, chord 1 m; domain [-7,14]×[-10,10] in chord units. The defaults use SA-neg, Sutherland viscosity, HLLC, first-order finite volumes, SSP-RK3, CFL=.15, viscous/SA CFL=.1, and fused GPU kernels with CUDA Graph batches of 32 sequential trials. All four outer sides use characteristic farfield conditions, with pressure-outlet and transmissive alternatives. The wall is stationary and no-slip; κ=0.
 
-| Path | Mesh | Solver | Current evidence |
-|---|---|---|---|
-| 2-D airfoil | Cartesian cut cell, LF1/LF2 | density based, RK3, SA-neg, low-Mach preconditioning | NACA4412 CL/CM/Cp comparison |
-| 3-D sphere | six-block cubed-sphere polyhedra | explicit-face CPU/CUDA | conservation, positivity, full 3-D CPU/CUDA agreement |
-| 3-D RAE2822 | mixed wedge/hexa thin slab | explicit-face DP-LUR | LF1 run and CPU/CUDA agreement |
-| 3-D CRM tetra | NASA body-fitted tetrahedra | explicit-face DP-LUR | 10.07M-cell import, restart, gradient and SA studies |
-| 3-D CRM AMR | multi-block Cartesian octree cut cell | procedural DP-LUR | 7.66M, 14.01M, and 21.52M control-volume cases |
+## Configuration and output
 
-The solvers are density based.  A pressure-based SIMPLE/SIMPLEC/PISO algorithm
-is **not implemented**.  Low-Mach preconditioning does not make a scheme
-pressure based.
+- `freestream`: Mach, angle of attack, static p/T, chord, γ, and R. Input x,y represent x/c,y/c and are preserved without translation or scaling.
+- `mesh`: bounds, base_shape, wall_buffer, max_cells, and LF1/LF2 refinement levels/boxes.
+- `physics`: turbulence=`none|sa-neg`, viscosity=`constant|sutherland`, viscosity constants, and the SA freestream value.
+- `boundaries`: separate xmin/xmax/ymin/ymax conditions. Pressure-outlet static pressure uses Pa; supersonic outflow does not impose outlet pressure.
+- `solver`: CPU/CUDA, hllc/ausm, reference/fused SA layouts, CFL or fixed dt in seconds, time/budget/steady criteria, and the moment reference.
+- `output`: x,y,p,rho,u,v,mach,temperature; CSV/uncompressed NPZ; regions, nearest-cell probes, surface patches, and whole-airfoil loads.
 
-## Quick build
+Each grid stores complete nondimensional arrays and geometry under `internal/`, with selected SI exports under `output/`. `result.json`, `solver.log`, `config.resolved.json`, and `command.json` record provenance and stopping reasons.
 
-CUDA build (RTX 4090 default architecture 89):
+`output/aerodynamics.csv/.npz` contains one row per case with selectable drag, lift, fx, fy, viscous forces, moments, and CL/CD/CM_z. Choose columns with `--load-fields` or `output.load_fields`. `output/loads.json` retains pressure, viscous, and total force/moment components and patch contributions.
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCFD_CUDA=ON \
-  -DCMAKE_CUDA_ARCHITECTURES=89
-cmake --build build -j 8
-ctest --test-dir build --output-on-failure
-```
+**Coordinates lie in the x–y plane; positive Mz is counterclockwise. The default reference is (.25c,0). Forces use N/m span and moments use N m/m span.** Wall pressure, density, and temperature are owner-cell samples; stationary no-slip wall velocity is zero. `temperature_owner_K` is not a prescribed wall temperature.
 
-CPU-only build:
+Exit codes: 0 for a completed mesh/time task or converged steady run; 2 for input/build/numerical/output errors; 3 for a steady run that has not met its criteria, with results saved. A fixed dt replaces automatic convective/viscous/SA limits; oversized values are not silently reduced to a stable choice.
 
-```bash
-cmake -S . -B build_cpu -DCMAKE_BUILD_TYPE=Release \
-  -DCFD_CUDA=OFF -DCFD_OPENMP=ON
-cmake --build build_cpu -j 8
-ctest --test-dir build_cpu --output-on-failure
-```
+## Current scope and development
 
-Run the self-contained 3-D sphere smoke case:
+The published pipeline is **2D**. It provides mechanical SA-neg/laminar flow with κ=0, without Fourier heat fluxes, wall functions, or an exposed low-Mach preconditioner. It is intended for fast, coarse-grid qualitative aerodynamic data. Temperature comes from total energy and the equation of state; high-Re boundary-layer resolution and experimental drag accuracy are not certified. See [GUIDE.html](GUIDE.html) for the methods and limitations.
 
-```bash
-bash examples/3d_sphere/run_smoke.sh build_cpu cpu
-```
+Local development of a viscous SA 3D sphere solver and low-Mach preconditioning is separate from this documentation release. The requested Mach 0.2 NACA4412 and 3D sphere work will be documented with verified results when ready. See [NEXT_SESSION.md](NEXT_SESSION.md). Heat transfer follows later.
 
-## Documentation
+After moving the folder, the build command preserves an old-location build under a renamed directory before reconfiguring. [CORE_PROVENANCE.json](CORE_PROVENANCE.json) retains the original extraction hashes and current hashes after English comment translation. The published numerical discretization is unchanged by this translation.
 
-- [Complete English theory and operation manual](docs/MANUAL.md)
-- [Step-by-step development history](docs/DEVELOPMENT_HISTORY.md)
-- [Example matrix and runbooks](examples/README.md)
-- [True-mesh visual showcase](examples/README.md#visual-showcase)
-- [Development status](docs/STATUS.md)
-- [Next development phase](docs/STATUS.md#next-development-phase)
-- [Data and binary formats](docs/FORMATS.md)
-- [Literature, standards, data, and software references](docs/REFERENCES.md)
-
-## Repository layout
-
-- `src/`, `pipeline/`, `quick_cfd.py`: published 2-D workflow;
-- `solvers/3d/`: explicit-face `sphere3d`, procedural-AMR `amr3d`, import,
-  preprocessing, restart, diagnostics, and unit tests;
-- `tools/cartesian_amr/`: octree planning, exact surface clipping, cut-cell
-  moments, agglomeration, solver-table assembly, and packing;
-- `tools/hybrid/`: RAE2822 mixed triangle/quad extrusion to wedges/hexahedra;
-- `examples/`: one step-by-step runbook per retained case;
-- `validation/`: lightweight validation and comparison scripts.
-
-## External data and licensing
-
-NASA CRM and archived RAE2822 source meshes are not bundled.  Their runbooks
-record source locations, checksums where available, conversion commands, and
-reference metadata.  The project owner must select a software license before a
-public release; see [LICENSE_NOT_SELECTED.md](LICENSE_NOT_SELECTED.md).
+Historical comparisons: [20 short-case checks](validation/ten_short_checks.json) and [full audit/timing summary](validation/summary.json). Large simulation outputs, archived references, build products, and the user's local Chinese originals are excluded from Git.

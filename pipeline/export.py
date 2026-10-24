@@ -71,16 +71,14 @@ def surface_data(raw, config, field):
     x, y = .5*(walls[:,4]+walls[:,6])*a['length'], .5*(walls[:,5]+walls[:,7])*a['length']
     data = dict(wall_id=np.arange(nw), patch_id=walls[:,3], source_edge_id=walls[:,1], owner_cell=owner,
                 donor_cell=stress[:,2], nx=walls[:,8], ny=walls[:,9], length_m=walls[:,10]*a['length'])
-    data['p_owner_Pa'] = field['p'][owner]
-    data['p_wall_Pa'] = stress[:,8]*a['pressure']
-    options = dict(x=x, y=y, p_wall_Pa=data['p_wall_Pa'], rho_owner_kg_m3=field['rho'][owner],
+    options = dict(x=x, y=y, p_owner_Pa=field['p'][owner], rho_owner_kg_m3=field['rho'][owner],
                    u_wall_m_s=np.zeros(nw), v_wall_m_s=np.zeros(nw), mach_wall=np.zeros(nw),
                    temperature_owner_K=field['temperature'][owner])
-    names = dict(x='x', y='y', p='p_wall_Pa', rho='rho_owner_kg_m3', u='u_wall_m_s', v='v_wall_m_s',
+    names = dict(x='x', y='y', p='p_owner_Pa', rho='rho_owner_kg_m3', u='u_wall_m_s', v='v_wall_m_s',
                  mach='mach_wall', temperature='temperature_owner_K')
     for key in config['output']['fields']:
         data[names[key]] = options[names[key]]
-    data['Cp'] = (data['p_wall_Pa']-config['freestream']['p_Pa'])/a['q_inf']
+    data['Cp'] = (stress[:,8]*a['pressure']-config['freestream']['p_Pa'])/a['q_inf']
     data['mu_donor_Pa_s'] = stress[:,4]*a['viscosity']
     data['normal_distance_m'] = stress[:,3]*a['length']
     data['wall_shear_signed_Pa'] = stress[:,7]*a['pressure']
@@ -192,7 +190,7 @@ def export_case(folder, config, geometry_folder):
     metadata = dict(fields=options['fields'], volume_output=options.get('volume',True), load_fields=options.get('load_fields',DEFAULT_LOAD_FIELDS), load_units='forces N/m span; moments N m/m span; CL/CD/CM dimensionless', units={key:UNITS[key] for key in options['fields']},
                     selected_cells=int(mask.sum()), total_cells=len(cells), region_xy_c=options['region_xy_c'],
                     selection='fluid control-volume centroid inside inclusive region; cell-average value',
-                    surface_sampling='p_wall and Cp from the pressure used by wall flux/loads; p_owner, rho, temperature from owner cell; u=v=Mach=0 at stationary no-slip wall',
+                    surface_sampling='p/rho/temperature from wall owner; u=v=Mach=0 at stationary no-slip wall; temperature_owner is not a prescribed wall temperature',
                     probes='nearest fluid-control-volume centroid, no interpolation; requested points inside/on body are rejected',
                     patch_markers={'1':'upper','2':'lower','3':'vertical trailing edge'},
                     load_scope='all airfoil fragments; independent of ROI/selected surface patches',

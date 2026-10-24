@@ -16,7 +16,7 @@ int static_amr2d_write(const StaticAmrMesh2D& m,const Params2D& p,const StaticAm
                        const std::string& prefix,std::string* error,const char* backend) {
   const auto failed=[&](const std::string& message){if(error)*error=message;return 1;};
   const size_t n=m.cells.size();
-  if(prefix.empty()||s.u.size()!=(m.transport.sa_model?5:4)*n)return failed("invalid output prefix or state");
+  if(prefix.empty()||s.u.size()!=4*n)return failed("invalid output prefix or state");
   std::error_code ec;const auto parent=std::filesystem::path(prefix).parent_path();
   if(!parent.empty())std::filesystem::create_directories(parent,ec);
   if(ec)return failed("cannot create output directory: "+ec.message());
@@ -28,7 +28,6 @@ int static_amr2d_write(const StaticAmrMesh2D& m,const Params2D& p,const StaticAm
     if(!std::isfinite(rho[k])||!(rho[k]>0)||!std::isfinite(pressure[k])||!(pressure[k]>0))return failed("nonphysical output state");
     for(int v=0;v<4;++v)totals[v]+=m.cells[k].volume*s.u[v*n+k];
   }
-  std::vector<double> wall_pressure;if(static_amr2d_wall_pressure(m,p,s.u,&wall_pressure))return failed("wall pressure reconstruction failed");
   FILE* f=std::fopen((prefix+".cells.csv").c_str(),"w");
   if(!f)return failed("cannot open cells CSV");
   std::fprintf(f,"cell_id,level,ix,iy,span,x0,x1,y0,y1,cx,cy,fluid_area,alpha,rho,u,v,p,wall_begin,wall_count\n");
@@ -77,11 +76,11 @@ int static_amr2d_write(const StaticAmrMesh2D& m,const Params2D& p,const StaticAm
   for(int v=0;v<5;++v){array_start(f,ids[v],1,"Int64");for(size_t q=0;q<nw;++q){const auto& a=m.walls[q];const size_t value=v==0?q:v==1?a.owner_cell:static_cast<size_t>(v==2?a.body_id:v==3?a.patch_id:a.source_edge_id);std::fprintf(f,"%zu\n",value);}array_end(f);}
   array_start(f,"normal_fluid_to_solid",3);for(const auto& a:m.walls)std::fprintf(f,"%.17e %.17e 0\n",a.nx,a.ny);array_end(f);
   array_start(f,"length");for(const auto& a:m.walls)std::fprintf(f,"%.17e\n",a.length);array_end(f);
-  array_start(f,"p_wall");for(double value:wall_pressure)std::fprintf(f,"%.17e\n",value);array_end(f);
+  array_start(f,"p_wall");for(const auto& a:m.walls)std::fprintf(f,"%.17e\n",pressure[a.owner_cell]);array_end(f);
   std::fprintf(f,"</CellData></Piece></PolyData></VTKFile>\n");if(!close_file(f))return failed("surface VTP write failed");
   std::map<int,SurfaceIntegral2D> loads;SurfaceIntegral2D total={};
-  for(size_t q=0;q<m.walls.size();++q) {const auto& a=m.walls[q];
-    const double fx=wall_pressure[q]*a.nx*a.length,fy=wall_pressure[q]*a.ny*a.length;
+  for(const auto& a:m.walls) {
+    const double fx=pressure[a.owner_cell]*a.nx*a.length,fy=pressure[a.owner_cell]*a.ny*a.length;
     const double mz=0.5*(a.x0+a.x1)*fy-0.5*(a.y0+a.y1)*fx;
     for(SurfaceIntegral2D* r:{&loads[a.patch_id],&total}){r->length+=a.length;r->fx+=fx;r->fy+=fy;r->mz+=mz;}
   }
@@ -92,8 +91,8 @@ int static_amr2d_write(const StaticAmrMesh2D& m,const Params2D& p,const StaticAm
   if(!close_file(f))return failed("loads CSV write failed");
   f=std::fopen((prefix+".json").c_str(),"w");if(!f)return failed("cannot open manifest");
   const auto& o=m.options;const unsigned long long uniform=static_cast<unsigned long long>(o.nx)*(1ULL<<o.levels)*o.ny*(1ULL<<o.levels);
-  std::fprintf(f,"{\n  \"method\": \"static 2:1 quadtree leaves, shared subface flux, SSP-RK3\",\n  \"backend\": \"%s\",\n  \"spatial_order\": %d,\n  \"srd_polynomial_degree\": 0,\n  \"time_subcycling\": false,\n  \"bounds\": [%.17e,%.17e,%.17e,%.17e],\n  \"base_shape\": [%d,%d],\n  \"max_level\": %d,\n  \"wall_buffer\": %d,\n  \"background_leaves\": %zu,\n  \"fluid_leaves\": %zu,\n  \"uniform_finest_background_cells\": %llu,\n  \"active_subfaces\": %zu,\n  \"coarse_fine_subfaces\": %zu,\n  \"wall_fragments\": %zu,\n  \"small_cells\": %zu,\n  \"gamma\": %.17e,\n  \"cfl\": %.17e,\n  \"dt_fixed\": %.17e,\n  \"flux\": \"%s\",\n  \"bc\": [%d,%d,%d,%d],\n  \"time\": %.17e,\n  \"steps\": %ld,\n  \"rejected_trials\": %ld,\n  \"integrated_conserved\": [%.17e,%.17e,%.17e,%.17e],\n  \"mesh_visualization\": \"background rectangles, not clipped fluid polygons\",\n  \"validation\": \"not run for this implementation\"\n}\n",
-    backend,p.amr_spatial_order,o.xmin,o.xmax,o.ymin,o.ymax,o.nx,o.ny,o.levels,o.buffer,m.background_leaves,n,uniform,m.faces.size(),m.coarse_fine_faces,nw,m.small_cells,p.gamma,p.cfl,p.dt_fixed,p.flux==FLUX_HLLC?"hllc":"ausm",m.boundaries[0].kind<0?p.bc[0]:m.boundaries[0].kind,m.boundaries[1].kind<0?p.bc[1]:m.boundaries[1].kind,m.boundaries[2].kind<0?p.bc[2]:m.boundaries[2].kind,m.boundaries[3].kind<0?p.bc[3]:m.boundaries[3].kind,s.time,s.steps,s.rejected,totals[0],totals[1],totals[2],totals[3]);
+  std::fprintf(f,"{\n  \"method\": \"static 2:1 quadtree leaves, shared subface flux, SSP-RK3\",\n  \"backend\": \"%s\",\n  \"spatial_order\": 1,\n  \"srd_polynomial_degree\": 0,\n  \"time_subcycling\": false,\n  \"bounds\": [%.17e,%.17e,%.17e,%.17e],\n  \"base_shape\": [%d,%d],\n  \"max_level\": %d,\n  \"wall_buffer\": %d,\n  \"background_leaves\": %zu,\n  \"fluid_leaves\": %zu,\n  \"uniform_finest_background_cells\": %llu,\n  \"active_subfaces\": %zu,\n  \"coarse_fine_subfaces\": %zu,\n  \"wall_fragments\": %zu,\n  \"small_cells\": %zu,\n  \"gamma\": %.17e,\n  \"cfl\": %.17e,\n  \"dt_fixed\": %.17e,\n  \"flux\": \"%s\",\n  \"bc\": [%d,%d,%d,%d],\n  \"time\": %.17e,\n  \"steps\": %ld,\n  \"rejected_trials\": %ld,\n  \"integrated_conserved\": [%.17e,%.17e,%.17e,%.17e],\n  \"mesh_visualization\": \"background rectangles, not clipped fluid polygons\",\n  \"validation\": \"not run for this implementation\"\n}\n",
+    backend,o.xmin,o.xmax,o.ymin,o.ymax,o.nx,o.ny,o.levels,o.buffer,m.background_leaves,n,uniform,m.faces.size(),m.coarse_fine_faces,nw,m.small_cells,p.gamma,p.cfl,p.dt_fixed,p.flux==FLUX_HLLC?"hllc":"ausm",m.boundaries[0].kind<0?p.bc[0]:m.boundaries[0].kind,m.boundaries[1].kind<0?p.bc[1]:m.boundaries[1].kind,m.boundaries[2].kind<0?p.bc[2]:m.boundaries[2].kind,m.boundaries[3].kind<0?p.bc[3]:m.boundaries[3].kind,s.time,s.steps,s.rejected,totals[0],totals[1],totals[2],totals[3]);
   if(!close_file(f))return failed("manifest write failed");
   if(static_amr2d_write_boundaries(m,p,prefix,error))return 1;
   return static_amr2d_write_viscous_snapshot(m,p,s,prefix,error);

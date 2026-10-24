@@ -36,14 +36,10 @@ struct Stretch {
 };
 
 struct Params2D {
-  bool low_mach_preconditioning = false; // steady pseudo-time only
-  bool local_pseudo_time = false;
-  double low_mach_reference = .2, low_mach_floor = .02;
   double gamma;
   double cfl;
   int flux;         // FluxType
   int limiter;      // LimiterType
-  int amr_spatial_order = 1; // static cut-cell solver only: 1 constant, 2 limited least squares
   double venkat_k;  // Venkatakrishnan K.
   double ausm_mco;  // AUSM+-up reference Mach number, overridable per case.
   int bc[4];        // BCType for xmin,xmax,ymin,ymax; periodic boundaries must be paired.
